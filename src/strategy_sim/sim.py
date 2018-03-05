@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import pandas as pd
+from math import exp
 from collections import namedtuple
 
 __author__ = "David Grisham"
@@ -17,21 +19,20 @@ __license__ = "mit"
 
 def main():
     # initial ledgers
-    ledgers = {
-        0: {1: newLedger(2, 1), 2: newLedger(3, 1)},
-        1: {0: newLedger(1, 2)},
-        2: {0: newLedger(1, 3)},
-    }
     # peer data resources (in bytes/whatever)
     B = 10
-    resources = [B, B, B] # TODO: make not heterogeneous
+    resources = [B, B, B]
     # dictionary of reciprocation functions
-    fs = {'linear' : lambda x: x}
+    fs = {
+        'linear'  : lambda x: x,
+        'sigmoid' : lambda x: 1 / (1 + exp(1 - 2 * x))
+    }
 
+    function = 'sigmoid'
     # test functions
-    result = testFunction('linear', fs['linear'], resources, ledgers)
+    dev, non_dev = testFunction(function, fs[function], resources)
     # write results to file
-    return result
+    return dev, non_dev
 
 def testFunctions(rfs, resources, ledgers):
     # fs is array from function name/desc/identifier to reciprocation function
@@ -40,27 +41,49 @@ def testFunctions(rfs, resources, ledgers):
 
 # testFunction finds deviations from the reciprocation_function that provide a
 # better payoff in the next round
-def testFunction(name, reciprocation_function, resources, ledgers):
+# NOTE: currently assumes **exactly 3 peers**
+def testFunction(name, reciprocation_function, resources):
+    # peer that we'll test as the deviating peer
+    peer = 0
     # inputs:
         # 1. function 'name' (human-readable identifer)
         # 2. reciprocation function
     # peer 0's allocations in non-deviating case
-    allocations = calculateAllocations(reciprocation_function, resources[0], ledgers[0])
-    ledgers = updateLedgers(ledgers, 0, allocations)
-    # return value: non
-    # results; dict with ???
-    # calculate non-deviating case
+    allocations_non_dev = calculateAllocations(reciprocation_function, resources[peer], initialLedgers()[peer])
+    ledgers_non_dev = updateLedgers(initialLedgers(), peer, allocations_non_dev)
+    # calculate allocations given new state
+    payoff_non_dev = totalAllocationToPeer(reciprocation_function, resources, ledgers_non_dev, peer)
     # compare a bunch of deviating cases, store in results
-    # return results
-    return ledgers
-    #pass
+    payoffs_dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
+    printLedgers(initialLedgers())
+    for i in range(resources[peer] + 1):
+        allocations_dev = {1: i, 2: resources[peer] - i}
+        ledgers_dev = updateLedgers(initialLedgers(), peer, allocations_dev)
+        printLedgers(ledgers_dev)
+        payoff_dev = totalAllocationToPeer(reciprocation_function, resources, ledgers_dev, peer)
+        payoffs_dev = payoffs_dev.append({
+            'b01': allocations_dev[1],
+            'b02': allocations_dev[2],
+            'payoff': payoff_dev
+        }, ignore_index=True)
+    # return payoff in non-deviating case, and payoffs for deviating cases
+    return payoff_non_dev, payoffs_dev
 
-def calculatePayoff(allocations, resources):
+def totalAllocationToPeer(reciprocation_function, resources, ledgers, peer):
     # input
-    #   -   peer 0's allocations for 1 and 2
-    #   -   peer 1 and 2's data resources
+    #   -   reciprocation function
+    #   -   current ledgers
+    #   -   peer data resources
+    #   -   which peer to calculate the payoff for
     # output: peer 0's payoff
-    return
+    total = 0
+    for i, resource in enumerate(resources):
+        if i == peer:
+            continue
+        allocation = calculateAllocations(reciprocation_function, resource, ledgers[i])
+        total += allocation[peer]
+    print('')
+    return total
 
 # update ledger values after a 'send' happens
 def updateLedgers(ledgers, sender, allocations):
@@ -98,5 +121,13 @@ def newLedger(recv_from=0, sent_to=0):
 def debtRatio(ledger):
     return ledger.recv_from / (ledger.sent_to + 1)
 
+# return initial ledgers; easier than dealing with references
+def initialLedgers():
+    # TODO: symmetric initialization of ledgers (so ledgers[0][1] == ledgers[1][0] always)
+    return {
+        0: {1: newLedger(1, 2), 2: newLedger(1, 2)},
+        1: {0: newLedger(2, 1), 2: newLedger(2, 1)},
+        2: {1: newLedger(1, 2), 0: newLedger(2, 1)},
+    }
 if __name__ == '__main__':
-    main()
+    dev, non_dev = main()
