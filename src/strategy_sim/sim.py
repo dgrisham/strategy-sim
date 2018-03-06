@@ -2,12 +2,21 @@
 # -*- coding: utf-8 -*-
 
 import pandas as pd
+from copy import deepcopy
 from math import exp
-from collections import namedtuple
+from collections import namedtuple, defaultdict
+# plotting
+import matplotlib as mpl
+mpl.use('Agg')
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.pyplot as plt
+import numpy as np
 
 __author__ = "David Grisham"
 __copyright__ = "David Grisham"
 __license__ = "mit"
+
+DEBUG = True
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
@@ -23,80 +32,143 @@ def main():
     B = 10
     resources = [B, B, B]
     # dictionary of reciprocation functions
-    fs = {
+    rfs = {
         'linear'  : lambda x: x,
-        'sigmoid' : lambda x: 1 / (1 + exp(1 - 2 * x))
+        'sigmoid' : lambda x: 1 - 1 / (1 + exp(1 - 2 * x))
     }
 
-    function = 'sigmoid'
+    function = 'linear'
     # test functions
-    dev, non_dev = testFunction(function, fs[function], resources)
-    # write results to file
-    return dev, non_dev
-
-def testFunctions(rfs, resources, ledgers):
-    # fs is array from function name/desc/identifier to reciprocation function
-    for f in range(rfs):
-        testFunction(name, reciprocation_function)
+    non_dev, dev = testFunction(rfs[function], resources)
+    # plot results
+    #plot(non_dev, dev)
+    return non_dev, dev
 
 # testFunction finds deviations from the reciprocation_function that provide a
 # better payoff in the next round
 # NOTE: currently assumes **exactly 3 peers**
-def testFunction(name, reciprocation_function, resources):
-    # peer that we'll test as the deviating peer
-    peer = 0
+def testFunction(reciprocation_function, resources):
     # inputs:
         # 1. function 'name' (human-readable identifer)
         # 2. reciprocation function
-    # peer 0's allocations in non-deviating case
-    allocations_non_dev = calculateAllocations(reciprocation_function, resources[peer], initialLedgers()[peer])
-    ledgers_non_dev = updateLedgers(initialLedgers(), peer, allocations_non_dev)
+    # outputs:
+        # 1. allocations + payoff in non-deviating case
+        # 2. allocations + payoff in all deviating cases
+
+    non_dev = runNormal(reciprocation_function, resources)
+    dev = runDeviate(reciprocation_function, resources)
+    return non_dev, dev
+
+def runNormal(reciprocation_function, resources):
+    # peer that we'll test as the deviating peer
+    peer = 0
+    # peer allocations in non-deviating case
+    allocations, ledgers = propagate(reciprocation_function, resources, initialLedgers())
     # calculate allocations given new state
-    payoff_non_dev = totalAllocationToPeer(reciprocation_function, resources, ledgers_non_dev, peer)
-    # compare a bunch of deviating cases, store in results
-    payoffs_dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
-    printLedgers(initialLedgers())
+    payoff = totalAllocationToPeer(reciprocation_function, resources, ledgers, peer)
+
+    if DEBUG:
+        print("ledgers_non_dev\n-------")
+        printLedgers(ledgers)
+
+    # store results for non-deviating case
+    non_dev = {
+        'b01': allocations[0][1],
+        'b02': allocations[0][2],
+        'payoff': payoff
+    }
+
+    return non_dev
+
+def runDeviate(reciprocation_function, resources):
+    # peer that we'll test as the deviating peer
+    peer = 0
+    # get other peer's allocations
+    allocations, _ = propagate(reciprocation_function, resources, initialLedgers())
+    # test a bunch of deviating cases, store results
+    dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
+
+    if DEBUG:
+        printLedgers(initialLedgers())
+
     for i in range(resources[peer] + 1):
-        allocations_dev = {1: i, 2: resources[peer] - i}
-        ledgers_dev = updateLedgers(initialLedgers(), peer, allocations_dev)
-        printLedgers(ledgers_dev)
+        # set peer 0's deviating allocation
+        allocations[peer] = {1: i, 2: resources[peer] - i}
+
+        if DEBUG:
+            print("allocations\n-----------")
+            print(allocations)
+
+        # update ledgers based on the round's allocations
+        ledgers_dev = updateLedgers(initialLedgers(), allocations)
+        # calculate `peer`'s payoff for next round
         payoff_dev = totalAllocationToPeer(reciprocation_function, resources, ledgers_dev, peer)
-        payoffs_dev = payoffs_dev.append({
-            'b01': allocations_dev[1],
-            'b02': allocations_dev[2],
+
+        if DEBUG:
+            print("ledgers\n-------")
+            printLedgers(ledgers_dev)
+
+        dev = dev.append({
+            'b01': allocations[0][1],
+            'b02': allocations[0][2],
             'payoff': payoff_dev
         }, ignore_index=True)
+
     # return payoff in non-deviating case, and payoffs for deviating cases
-    return payoff_non_dev, payoffs_dev
+    return dev
+
+def propagate(reciprocation_function, resources, ledgers):
+    allocations = {i: calculateAllocations(reciprocation_function, resources[i], ledgers[i]) for i in ledgers.keys()}
+    new_ledgers = updateLedgers(ledgers, allocations)
+    return allocations, new_ledgers
 
 def totalAllocationToPeer(reciprocation_function, resources, ledgers, peer):
     # input
     #   -   reciprocation function
     #   -   current ledgers
     #   -   peer data resources
-    #   -   which peer to calculate the payoff for
-    # output: peer 0's payoff
+    #   -   `peer`: which peer to calculate the payoff for
+    # output: `peer`'s payoff
+
     total = 0
     for i, resource in enumerate(resources):
         if i == peer:
             continue
         allocation = calculateAllocations(reciprocation_function, resource, ledgers[i])
-        total += allocation[peer]
-    print('')
-    return total
 
-# update ledger values after a 'send' happens
-def updateLedgers(ledgers, sender, allocations):
-    for to, allocation in allocations.items():
-        ledgers[to][sender].sent_to   += allocation
-        ledgers[sender][to].recv_from += allocation
-    return ledgers
+        if DEBUG:
+            print("Peer {} sends {} to {}".format(i, allocation[peer], peer))
+
+        total += allocation[peer]
+    return total
 
 # calculate how a peer with `resource` allocations to its peers given their
 # `ledgers` and the `reciprocation_function`
 def calculateAllocations(reciprocation_function, resource, ledgers):
-    total_weight = sum(debtRatio(l) for l in ledgers.values())
+    total_weight = sum(reciprocation_function(debtRatio(l)) for l in ledgers.values())
     return {p: resource * reciprocation_function(debtRatio(l)) / total_weight for p, l in ledgers.items()}
+
+# update ledger values based on a round of allocations
+def updateLedgers(ledgers, allocations):
+    new_ledgers = deepcopy(ledgers)
+    for sender in allocations.keys():
+        for receiver, allocation in allocations[sender].items():
+            new_ledgers[receiver][sender].sent_to   += allocation
+            new_ledgers[sender][receiver].recv_from += allocation
+    return new_ledgers
+
+def plot(non_dev, dev):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    #ax.scatter([non_dev['b01']], [non_dev['b02']], [non_dev['payoff']], color='h')
+    xs = np.meshgrid(range(round(non_dev['b01']) - 50, round(non_dev['b01']) + 50))
+    ys = np.meshgrid(range(round(non_dev['b02']) - 50, round(non_dev['b02']) + 50))
+    #ax.plot_surface(non_dev['b01'], non_dev['b02'], non_dev['payoff'])
+    ax.plot_surface(xs, ys, np.full((len(xs), len(ys)), non_dev['payoff']))
+    ax.scatter(dev['b01'], dev['b02'], dev['payoff'], color='b')
+
+    plt.savefig('output.pdf')
 
 def write(results):
     pass
@@ -125,9 +197,10 @@ def debtRatio(ledger):
 def initialLedgers():
     # TODO: symmetric initialization of ledgers (so ledgers[0][1] == ledgers[1][0] always)
     return {
-        0: {1: newLedger(1, 2), 2: newLedger(1, 2)},
-        1: {0: newLedger(2, 1), 2: newLedger(2, 1)},
-        2: {1: newLedger(1, 2), 0: newLedger(2, 1)},
+        0: {1: newLedger(1, 1), 2: newLedger(1, 1)},
+        1: {0: newLedger(1, 1), 2: newLedger(1, 1)},
+        2: {1: newLedger(1, 1), 0: newLedger(1, 1)},
     }
+
 if __name__ == '__main__':
-    dev, non_dev = main()
+    non_dev, dev = main()

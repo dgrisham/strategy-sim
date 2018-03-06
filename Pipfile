@@ -9,6 +9,7 @@ name = "pypi"
 
 pytest = "*"
 pandas = "*"
+matplotlib = "*"
 
 
 [dev-packages]
