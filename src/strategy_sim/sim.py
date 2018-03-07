@@ -17,7 +17,7 @@ __copyright__ = "David Grisham"
 __license__ = "mit"
 
 DEBUG_L1 = True
-DEBUG_L2 = True
+DEBUG_L2 = True and DEBUG_L1
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
