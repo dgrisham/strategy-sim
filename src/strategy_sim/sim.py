@@ -16,11 +16,12 @@ __author__ = "David Grisham"
 __copyright__ = "David Grisham"
 __license__ = "mit"
 
-DEBUG_L1 = True
-DEBUG_L2 = True and DEBUG_L1
+DEBUG_L1 = False
+DEBUG_L2 = DEBUG_L1 and True
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
+#       (var name representing this often shortened to rf(s))
 #   -   ledger: namedtuple of sent_to and recv_from values
 #   -   ledgers: dict mapping peer id to ledger
 
@@ -38,17 +39,22 @@ def main():
         'sigmoid'    : lambda x: 1 - 1 / (1 + exp(1 - 2 * x))
     }
 
-    function = 'linear'
-    # test functions
-    non_dev, dev = testFunction(rfs[function], resources)
+    function = 'sigmoid'
+    outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
+    return run(resources, rfs[function], outfile)
+
+def run(resources, rf, outfile):
+    # test function
+    non_dev, dev = testFunction(rf, resources)
     # plot results
-    plot(function, B, non_dev, dev)
+    plot(outfile, resources[1], non_dev, dev)
+
     return non_dev, dev
 
-# testFunction finds deviations from the reciprocation_function that provide a
+# testFunction finds deviations from the rf that provide a
 # better payoff in the next round
 # NOTE: currently assumes **exactly 3 peers**
-def testFunction(reciprocation_function, resources):
+def testFunction(rf, resources):
     # inputs:
         # 1. function 'name' (human-readable identifer)
         # 2. reciprocation function
@@ -56,17 +62,17 @@ def testFunction(reciprocation_function, resources):
         # 1. allocations + payoff in non-deviating case
         # 2. allocations + payoff in all deviating cases
 
-    non_dev = runNormal(reciprocation_function, resources)
-    dev = runDeviate(reciprocation_function, resources)
+    non_dev = runNormal(rf, resources)
+    dev = runDeviate(rf, resources)
     return non_dev, dev
 
-def runNormal(reciprocation_function, resources):
+def runNormal(rf, resources):
     # peer that we'll test as the deviating peer
     peer = 0
     # peer allocations in non-deviating case
-    allocations, ledgers = propagate(reciprocation_function, resources, initialLedgers())
+    allocations, ledgers = propagate(rf, resources, initialLedgers())
     # calculate allocations given new state
-    payoff = totalAllocationToPeer(reciprocation_function, resources, ledgers, peer)
+    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
     if DEBUG_L1:
         print("ledgers_non_dev\n-------")
@@ -81,11 +87,11 @@ def runNormal(reciprocation_function, resources):
 
     return non_dev
 
-def runDeviate(reciprocation_function, resources):
+def runDeviate(rf, resources):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
-    allocations, _ = propagate(reciprocation_function, resources, initialLedgers())
+    allocations, _ = propagate(rf, resources, initialLedgers())
     # test a bunch of deviating cases, store results
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
@@ -103,7 +109,7 @@ def runDeviate(reciprocation_function, resources):
         # update ledgers based on the round's allocations
         ledgers_dev = updateLedgers(initialLedgers(), allocations)
         # calculate `peer`'s payoff for next round
-        payoff_dev = totalAllocationToPeer(reciprocation_function, resources, ledgers_dev, peer)
+        payoff_dev = totalAllocationToPeer(rf, resources, ledgers_dev, peer)
 
         if DEBUG_L1:
             print("ledgers\n-------")
@@ -116,14 +122,14 @@ def runDeviate(reciprocation_function, resources):
         }, ignore_index=True)
 
     # TODO: start with pandas dict, rather than transforming at the end
-    return pd.DataFrame.from_dict(dev)
+    return dev
 
-def propagate(reciprocation_function, resources, ledgers):
-    allocations = {i: calculateAllocations(reciprocation_function, resources[i], ledgers[i]) for i in ledgers.keys()}
+def propagate(rf, resources, ledgers):
+    allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
     new_ledgers = updateLedgers(ledgers, allocations)
     return allocations, new_ledgers
 
-def totalAllocationToPeer(reciprocation_function, resources, ledgers, peer):
+def totalAllocationToPeer(rf, resources, ledgers, peer):
     # input
     #   -   reciprocation function
     #   -   current ledgers
@@ -135,7 +141,7 @@ def totalAllocationToPeer(reciprocation_function, resources, ledgers, peer):
     for i, resource in enumerate(resources):
         if i == peer:
             continue
-        allocation = calculateAllocations(reciprocation_function, resource, ledgers[i])
+        allocation = calculateAllocations(rf, resource, ledgers[i])
 
         if DEBUG_L1:
             print("Peer {} sends {} to {}".format(i, allocation[peer], peer))
@@ -144,17 +150,17 @@ def totalAllocationToPeer(reciprocation_function, resources, ledgers, peer):
     return total
 
 # calculate how a peer with `resource` allocations to its peers given their
-# `ledgers` and the `reciprocation_function`
-def calculateAllocations(reciprocation_function, resource, ledgers):
-    total_weight = sum(reciprocation_function(debtRatio(l)) for l in ledgers.values())
+# `ledgers` and the `rf`
+def calculateAllocations(rf, resource, ledgers):
+    total_weight = sum(rf(debtRatio(l)) for l in ledgers.values())
 
     if DEBUG_L2:
         print("resource: {}".format(resource))
         print("total_weight: {}".format(total_weight))
         for p, l in ledgers.items():
-            print("reciprocation_function(debtRatio(l)): {}".format(reciprocation_function(debtRatio(l))))
+            print("rf(debtRatio(l)): {}".format(rf(debtRatio(l))))
 
-    return {p: resource * reciprocation_function(debtRatio(l)) / total_weight for p, l in ledgers.items()}
+    return {p: resource * rf(debtRatio(l)) / total_weight for p, l in ledgers.items()}
 
 # update ledger values based on a round of allocations
 def updateLedgers(ledgers, allocations):
@@ -165,15 +171,16 @@ def updateLedgers(ledgers, allocations):
             new_ledgers[receiver][sender].recv_from += allocation
     return new_ledgers
 
-def plot(function, B, non_dev, dev):
+def plot(outfile, B, non_dev, dev):
     dev_xs = np.sqrt(B ** 2 - 2 * B * dev['b01'] + dev['b01'] ** 2 + dev['b02'] ** 2)
     plt.scatter(dev_xs, dev['payoff'], color='blue')
 
     non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b01'] + non_dev['b01'] ** 2 + non_dev['b02'] ** 2)
     plt.scatter(non_dev_xs, non_dev['payoff'], color='red', marker='+')
 
-    plt.title(function)
-    plt.savefig("plots/{f}_{B}.pdf".format(f=function, B=B))
+    title = outfile.split('.')[0].replace('-', ' ').replace('_', ', ').title()
+    plt.title(title)
+    plt.savefig("plots/{}".format(outfile))
 
 def plot3D(non_dev, dev):
     fig = plt.figure()
