@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# general imports
+import sys
+import argparse
 import pandas as pd
+import numpy as np
+## plotting
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+#from mpl_toolkits.mplot3d import Axes3D
+# selective imports
 from copy import deepcopy
 from math import exp
 from collections import namedtuple, defaultdict
-# plotting
-import matplotlib as mpl
-mpl.use('Agg')
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-import numpy as np
 
 __author__ = "David Grisham"
 __copyright__ = "David Grisham"
@@ -28,26 +32,42 @@ DEBUG_L2 = DEBUG_L1 and True
 # Main
 # ----
 
-def main():
-    # initial ledgers
-    # peer data resources (in bytes/whatever)
-    B = 10
-    resources = [B, B, B]
+def main(argv):
     # dictionary of reciprocation functions
     rfs = {
         'linear'     : lambda x: x,
-        'sigmoid'    : lambda x: 1 - 1 / (1 + exp(1 - 2 * x))
+        'sigmoid'    : lambda x: 1 - 1 / (1 + exp(1 - 2 * x)),
     }
 
-    function = 'sigmoid'
-    outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
-    return run(resources, rfs[function], outfile)
+    cli = argparse.ArgumentParser()
+    cli.add_argument(
+        '-r',
+        '--resources',
+        nargs="*",
+        action='append',
+        type=int,
+    )
+    cli.add_argument(
+        '-f',
+        '--reciprocation-function',
+        choices=rfs.keys(),
+        action='append'
+    )
+    if len(argv) == 0:
+        cli.print_usage()
+        exit(1)
+    args = cli.parse_args(argv)
+
+    for function in args.reciprocation_function:
+        for resources in args.resources:
+            outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
+            run(resources, rfs[function], outfile)
 
 def run(resources, rf, outfile):
     # test function
     non_dev, dev = testFunction(rf, resources)
     # plot results
-    plot(outfile, resources[1], non_dev, dev)
+    plot(outfile, resources[0], non_dev, dev)
 
     return non_dev, dev
 
@@ -172,31 +192,37 @@ def updateLedgers(ledgers, allocations):
     return new_ledgers
 
 def plot(outfile, B, non_dev, dev):
-    dev_xs = np.sqrt(B ** 2 - 2 * B * dev['b01'] + dev['b01'] ** 2 + dev['b02'] ** 2)
-    plt.scatter(dev_xs, dev['payoff'], color='blue')
+    dev_xs = np.sqrt(B ** 2 - 2 * B * dev['b02'] + dev['b02'] ** 2 + dev['b01'] ** 2)
+    non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
+    non_dev_xs, dev_xs = normalizeResults(non_dev_xs, dev_xs)
 
-    non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b01'] + non_dev['b01'] ** 2 + non_dev['b02'] ** 2)
+    plt.scatter(dev_xs, dev['payoff'], color='blue')
     plt.scatter(non_dev_xs, non_dev['payoff'], color='red', marker='+')
 
-    title = outfile.split('.')[0].replace('-', ' ').replace('_', ', ').title()
+    parts = outfile.split('.')[0].split('-')
+    title = "{}: {{{}}}".format(parts[0].title(), parts[1].replace('_', ', '))
+
     plt.title(title)
     plt.savefig("plots/{}".format(outfile))
+    plt.clf()
+
+def normalizeResults(xs1, xs2):
+    max_val = max(xs1.max(), xs2.max())
+    xs1 /= max_val
+    xs2 /= max_val
+    return xs1, xs2
 
 def plot3D(non_dev, dev):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    #ax.scatter([non_dev['b01']], [non_dev['b02']], [non_dev['payoff']], color='h')
     xs = np.meshgrid(range(round(non_dev['b01']) - 50, round(non_dev['b01']) + 50))
     ys = np.meshgrid(range(round(non_dev['b02']) - 50, round(non_dev['b02']) + 50))
-    #ax.plot_surface(non_dev['b01'], non_dev['b02'], non_dev['payoff'])
+
     ax.plot_surface(xs, ys, np.full((len(xs), len(ys)), non_dev['payoff']))
     ax.scatter(dev['b01'], dev['b02'], dev['payoff'], color='b')
 
     plt.savefig('output.pdf')
-
-def write(results):
-    pass
 
 # function to print ledgers. cleaner solution would be nice
 def printLedgers(ledgers):
@@ -228,4 +254,4 @@ def initialLedgers():
     }
 
 if __name__ == '__main__':
-    non_dev, dev = main()
+    main(sys.argv[1:])
