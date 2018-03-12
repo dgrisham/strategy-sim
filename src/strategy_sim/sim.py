@@ -53,6 +53,11 @@ def main(argv):
         choices=rfs.keys(),
         action='append'
     )
+    cli.add_argument(
+        '-o',
+        '--output',
+        default='',
+    )
     if len(argv) == 0:
         cli.print_usage()
         exit(1)
@@ -60,7 +65,9 @@ def main(argv):
 
     for function in args.reciprocation_function:
         for resources in args.resources:
-            outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
+            outfile = args.output
+            if not outfile:
+                outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
             run(resources, rfs[function], outfile)
 
 def run(resources, rf, outfile):
@@ -192,12 +199,19 @@ def updateLedgers(ledgers, allocations):
     return new_ledgers
 
 def plot(outfile, B, non_dev, dev):
-    dev_xs = np.sqrt(B ** 2 - 2 * B * dev['b02'] + dev['b02'] ** 2 + dev['b01'] ** 2)
-    non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
-    non_dev_xs, dev_xs = normalizeResults(non_dev_xs, dev_xs)
+    non_dev['xs'] = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
+    dev['xs'] = np.sqrt(B ** 2 - 2 * B * dev['b02'] + dev['b02'] ** 2 + dev['b01'] ** 2)
+    non_dev['xs'], dev['xs'] = normalizeResults(non_dev['xs'], dev['xs'])
 
-    plt.scatter(dev_xs, dev['payoff'], color='blue')
-    plt.scatter(non_dev_xs, non_dev['payoff'], color='red', marker='+')
+    payoff = non_dev.iloc[0]['payoff']
+    better = dev['payoff'] > payoff
+    same = dev['payoff'] == payoff
+    worse = dev['payoff'] < payoff
+
+    plt.scatter(dev['xs'][better], dev['payoff'][better], color='green')
+    plt.scatter(dev['xs'][same], dev['payoff'][same], color='#6da5ff')
+    plt.scatter(dev['xs'][worse], dev['payoff'][worse], color='red')
+    plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
     parts = outfile.split('.')[0].split('-')
     title = "{}: {{{}}}".format(parts[0].title(), parts[1].replace('_', ', '))
