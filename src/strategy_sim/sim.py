@@ -205,12 +205,12 @@ def plot(outfile, B, non_dev, dev):
 
     payoff = non_dev.iloc[0]['payoff']
     better = dev['payoff'] > payoff
-    same = dev['payoff'] == payoff
+    same = np.isclose(dev['payoff'], payoff)
     worse = dev['payoff'] < payoff
 
     plt.scatter(dev['xs'][better], dev['payoff'][better], color='green')
-    plt.scatter(dev['xs'][same], dev['payoff'][same], color='#6da5ff')
     plt.scatter(dev['xs'][worse], dev['payoff'][worse], color='red')
+    plt.scatter(dev['xs'][same], dev['payoff'][same], color='#6da5ff')
     plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
     parts = outfile.split('.')[0].split('-')
