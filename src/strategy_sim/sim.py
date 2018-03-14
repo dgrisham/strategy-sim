@@ -12,8 +12,9 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 #from mpl_toolkits.mplot3d import Axes3D
 # selective imports
-from copy import deepcopy
-from math import exp
+from math import exp, gcd
+from functools import reduce
+from itertools import combinations
 from collections import namedtuple, defaultdict
 
 __author__ = "David Grisham"
@@ -51,7 +52,19 @@ def main(argv):
         '-f',
         '--reciprocation-function',
         choices=rfs.keys(),
-        action='append'
+        action='append',
+    )
+    cli.add_argument(
+        '-i',
+        '--initial-reputation',
+        choices=['flat', 'proportional'],
+        action='append',
+    )
+    cli.add_argument(
+        '-d',
+        '--deviation',
+        type=float,
+        default=1,
     )
     cli.add_argument(
         '-o',
@@ -60,19 +73,21 @@ def main(argv):
     )
     if len(argv) == 0:
         cli.print_usage()
-        exit(1)
+        exit()
     args = cli.parse_args(argv)
 
     for function in args.reciprocation_function:
         for resources in args.resources:
-            outfile = args.output
-            if not outfile:
-                outfile = function + '-' + '_'.join(str(n) for n in resources) + '.pdf'
-            run(resources, rfs[function], outfile)
+            for rep in args.initial_reputation:
+                outfile = args.output
+                if not outfile:
+                    outfile = '{f}-{rep}-{r}.pdf'.format(f=function, rep=rep, r='_'.join(str(n) for n in resources))
+                ledgers = initialLedgers(rep, resources)
+                run(resources, rfs[function], ledgers, args.deviation, outfile)
 
-def run(resources, rf, outfile):
+def run(resources, rf, ledgers, deviation, outfile):
     # test function
-    non_dev, dev = testFunction(rf, resources)
+    non_dev, dev = testFunction(rf, resources, ledgers, deviation)
     # plot results
     plot(outfile, resources[0], non_dev, dev)
 
@@ -81,7 +96,7 @@ def run(resources, rf, outfile):
 # testFunction finds deviations from the rf that provide a
 # better payoff in the next round
 # NOTE: currently assumes **exactly 3 peers**
-def testFunction(rf, resources):
+def testFunction(rf, resources, initial_ledgers, deviation):
     # inputs:
         # 1. function 'name' (human-readable identifer)
         # 2. reciprocation function
@@ -89,15 +104,15 @@ def testFunction(rf, resources):
         # 1. allocations + payoff in non-deviating case
         # 2. allocations + payoff in all deviating cases
 
-    non_dev = runNormal(rf, resources)
-    dev = runDeviate(rf, resources)
+    non_dev = runNormal(rf, resources, initial_ledgers)
+    dev = runDeviate(rf, resources, initial_ledgers, deviation)
     return non_dev, dev
 
-def runNormal(rf, resources):
+def runNormal(rf, resources, initial_ledgers):
     # peer that we'll test as the deviating peer
     peer = 0
     # peer allocations in non-deviating case
-    allocations, ledgers = propagate(rf, resources, initialLedgers())
+    allocations, ledgers = propagate(rf, resources, initial_ledgers)
     # calculate allocations given new state
     payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
@@ -114,18 +129,18 @@ def runNormal(rf, resources):
 
     return non_dev
 
-def runDeviate(rf, resources):
+def runDeviate(rf, resources, initial_ledgers, deviation):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
-    allocations, _ = propagate(rf, resources, initialLedgers())
+    allocations, _ = propagate(rf, resources, initial_ledgers)
     # test a bunch of deviating cases, store results
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
     if DEBUG_L1:
-        printLedgers(initialLedgers())
+        printLedgers(initial_ledgers)
 
-    for i in range(resources[peer] + 1):
+    for i in np.arange(resources[peer] + 1, step=deviation):
         # set peer 0's deviating allocation
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
@@ -134,7 +149,7 @@ def runDeviate(rf, resources):
             print(allocations)
 
         # update ledgers based on the round's allocations
-        ledgers_dev = updateLedgers(initialLedgers(), allocations)
+        ledgers_dev = updateLedgers(initial_ledgers, allocations)
         # calculate `peer`'s payoff for next round
         payoff_dev = totalAllocationToPeer(rf, resources, ledgers_dev, peer)
 
@@ -191,7 +206,7 @@ def calculateAllocations(rf, resource, ledgers):
 
 # update ledger values based on a round of allocations
 def updateLedgers(ledgers, allocations):
-    new_ledgers = deepcopy(ledgers)
+    new_ledgers = copyLedgers(ledgers)
     for sender in allocations.keys():
         for receiver, allocation in allocations[sender].items():
             new_ledgers[sender][receiver].sent_to   += allocation
@@ -214,7 +229,7 @@ def plot(outfile, B, non_dev, dev):
     plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
     parts = outfile.split('.')[0].split('-')
-    title = "{}: {{{}}}".format(parts[0].title(), parts[1].replace('_', ', '))
+    title = "{}, {}: {{{}}}".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
 
     plt.title(title)
     plt.savefig("plots/{}".format(outfile))
@@ -256,16 +271,38 @@ def newLedger(recv_from=0, sent_to=0):
     return l
 
 def debtRatio(ledger):
-    return ledger.recv_from / (ledger.sent_to + 1)
+    return ledger.recv_from / (ledger.sent_to)
 
-# return initial ledgers; easier than dealing with references
-def initialLedgers():
-    # TODO: symmetric initialization of ledgers (so ledgers[0][1] == ledgers[1][0] always)
-    return {
-        0: {1: newLedger(1, 1), 2: newLedger(1, 1)},
-        1: {0: newLedger(1, 1), 2: newLedger(1, 1)},
-        2: {1: newLedger(1, 1), 0: newLedger(1, 1)},
-    }
+def initialLedgers(rep_type, resources):
+    if rep_type == 'flat':
+        return defaultdict(lambda: {},
+        {
+            0: {1: newLedger(1, 1), 2: newLedger(1, 1)},
+            1: {0: newLedger(1, 1), 2: newLedger(1, 1)},
+            2: {1: newLedger(1, 1), 0: newLedger(1, 1)},
+        })
+    if rep_type == 'proportional':
+        ledgers = defaultdict(lambda: {})
+        reputations = [r / reduce(gcd, resources) for r in resources]
+        for i, j in combinations(range(len(reputations)), 2):
+            ledgers = addLedgerPair(ledgers, i, j, reputations[i], reputations[j])
+        return ledgers
+    # TODO: return error?
+    return defaultdict(lambda: {})
+
+def addLedgerPair(ledgers, i, j, bij, bji):
+    new_ledgers = copyLedgers(ledgers)
+    new_ledgers[i][j] = newLedger(bji, bij)
+    new_ledgers[j][i] = newLedger(bij, bji)
+    return new_ledgers
+
+def copyLedgers(ledgers):
+    # can't deepcopy() a dict of dicts of namedtuples...
+    new_ledgers = initialLedgers('', [])
+    for i in ledgers.keys():
+        for j, ledger in ledgers[i].items():
+            new_ledgers[i][j] = newLedger(ledger.recv_from, ledger.sent_to)
+    return new_ledgers
 
 if __name__ == '__main__':
     main(sys.argv[1:])
