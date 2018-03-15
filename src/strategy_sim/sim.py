@@ -21,8 +21,10 @@ __author__ = "David Grisham"
 __copyright__ = "David Grisham"
 __license__ = "mit"
 
+# TODO: make these params
 DEBUG_L1 = False
 DEBUG_L2 = DEBUG_L1 and True
+PLOT = True
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
@@ -36,8 +38,10 @@ DEBUG_L2 = DEBUG_L1 and True
 def main(argv):
     # dictionary of reciprocation functions
     rfs = {
-        'linear'     : lambda x: x,
-        'sigmoid'    : lambda x: 1 - 1 / (1 + exp(1 - 2 * x)),
+        'linear'   : lambda x: x,
+        'sigmoid'  : lambda x: 1 - 1 / (1 + exp(1 - 2 * x)),
+        'sigmoid2' : lambda x: 1 / (1 + exp(1-x)),
+        'tanh'     : lambda x: np.tanh(x),
     }
 
     cli = argparse.ArgumentParser()
@@ -81,33 +85,25 @@ def main(argv):
             for rep in args.initial_reputation:
                 outfile = args.output
                 if not outfile:
-                    outfile = '{f}-{rep}-{r}.pdf'.format(f=function, rep=rep, r='_'.join(str(n) for n in resources))
+                    outfile = '{f}-{rep}-{r}'.format(f=function, rep=rep, r='_'.join(str(n) for n in resources))
                 ledgers = initialLedgers(rep, resources)
                 run(resources, rfs[function], ledgers, args.deviation, outfile)
 
+# NOTE: currently assumes **exactly 3 peers**
 def run(resources, rf, ledgers, deviation, outfile):
     # test function
-    non_dev, dev = testFunction(rf, resources, ledgers, deviation)
-    # plot results
-    plot(outfile, resources[0], non_dev, dev)
+    non_dev = runNormal(rf, resources, ledgers)
+    dev = runDeviate(rf, resources, ledgers, deviation)
+    non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
+    if PLOT:
+        # plot results
+        plot(outfile, non_dev, dev)
+    # save results
+    pd.concat([non_dev, dev]).reset_index(drop=True).to_csv('results/{}.csv'.format(outfile), index=False)
 
     return non_dev, dev
 
-# testFunction finds deviations from the rf that provide a
-# better payoff in the next round
-# NOTE: currently assumes **exactly 3 peers**
-def testFunction(rf, resources, initial_ledgers, deviation):
-    # inputs:
-        # 1. function 'name' (human-readable identifer)
-        # 2. reciprocation function
-    # outputs:
-        # 1. allocations + payoff in non-deviating case
-        # 2. allocations + payoff in all deviating cases
-
-    non_dev = runNormal(rf, resources, initial_ledgers)
-    dev = runDeviate(rf, resources, initial_ledgers, deviation)
-    return non_dev, dev
-
+# run non_deviating case
 def runNormal(rf, resources, initial_ledgers):
     # peer that we'll test as the deviating peer
     peer = 0
@@ -129,6 +125,7 @@ def runNormal(rf, resources, initial_ledgers):
 
     return non_dev
 
+# run all deviating cases
 def runDeviate(rf, resources, initial_ledgers, deviation):
     # peer that we'll test as the deviating peer
     peer = 0
@@ -204,6 +201,18 @@ def calculateAllocations(rf, resource, ledgers):
 
     return {p: resource * rf(debtRatio(l)) / total_weight for p, l in ledgers.items()}
 
+# calculate values of x-axis in 2D slice of results
+def get2DSlice(B, non_dev, dev):
+    non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
+    dev_xs = np.sqrt(B ** 2 - 2 * B * dev['b02'] + dev['b02'] ** 2 + dev['b01'] ** 2)
+
+    # normalize to overall max
+    norm = B * np.sqrt(2)
+    non_dev_xs /= norm
+    dev_xs /= norm
+
+    return non_dev_xs, dev_xs
+
 # update ledger values based on a round of allocations
 def updateLedgers(ledgers, allocations):
     new_ledgers = copyLedgers(ledgers)
@@ -213,18 +222,14 @@ def updateLedgers(ledgers, allocations):
             new_ledgers[receiver][sender].recv_from += allocation
     return new_ledgers
 
-def plot(outfile, B, non_dev, dev):
-    non_dev['xs'] = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
-    dev['xs'] = np.sqrt(B ** 2 - 2 * B * dev['b02'] + dev['b02'] ** 2 + dev['b01'] ** 2)
-    non_dev['xs'], dev['xs'] = normalizeResults(non_dev['xs'], dev['xs'])
-
+def plot(outfile, non_dev, dev):
     payoff = non_dev.iloc[0]['payoff']
     better = dev['payoff'] > payoff
     same = np.isclose(dev['payoff'], payoff)
     worse = dev['payoff'] < payoff
 
-    plt.scatter(dev['xs'][better], dev['payoff'][better], color='green')
     plt.scatter(dev['xs'][worse], dev['payoff'][worse], color='red')
+    plt.scatter(dev['xs'][better], dev['payoff'][better], color='green')
     plt.scatter(dev['xs'][same], dev['payoff'][same], color='#6da5ff')
     plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
@@ -232,14 +237,8 @@ def plot(outfile, B, non_dev, dev):
     title = "{}, {}: {{{}}}".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
 
     plt.title(title)
-    plt.savefig("plots/{}".format(outfile))
+    plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
-
-def normalizeResults(xs1, xs2):
-    max_val = max(xs1.max(), xs2.max())
-    xs1 /= max_val
-    xs2 /= max_val
-    return xs1, xs2
 
 def plot3D(non_dev, dev):
     fig = plt.figure()
