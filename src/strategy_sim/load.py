@@ -13,3 +13,4 @@ def main(argv):
 if __name__ == '__main__':
     # call with `python -i`k and `results` will be available in shell
     results = main(sys.argv[1:])
+    nd = results.iloc[0]

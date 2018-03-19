@@ -23,8 +23,9 @@ __license__ = "mit"
 
 # TODO: make these params
 DEBUG_L1 = False
-DEBUG_L2 = DEBUG_L1 and True
+DEBUG_L2 = DEBUG_L1 and False
 PLOT = True
+SAVE = True
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
@@ -39,8 +40,8 @@ def main(argv):
     # dictionary of reciprocation functions
     rfs = {
         'linear'   : lambda x: x,
-        'sigmoid'  : lambda x: 1 - 1 / (1 + exp(1 - 2 * x)),
-        'sigmoid2' : lambda x: 1 / (1 + exp(1-x)),
+        #'sigmoid'  : lambda x: 1 - 1 / (1 + exp(1 - 2 * x)),
+        'sigmoid' : lambda x: 1 / (1 + exp(1-x)),
         'tanh'     : lambda x: np.tanh(x),
     }
 
@@ -87,6 +88,10 @@ def main(argv):
                 if not outfile:
                     outfile = '{f}-{rep}-{r}'.format(f=function, rep=rep, r='_'.join(str(n) for n in resources))
                 ledgers = initialLedgers(rep, resources)
+                if DEBUG_L1:
+                    print("Initial Ledgers")
+                    print("---------------")
+                    printLedgers(ledgers)
                 run(resources, rfs[function], ledgers, args.deviation, outfile)
 
 # NOTE: currently assumes **exactly 3 peers**
@@ -98,8 +103,9 @@ def run(resources, rf, ledgers, deviation, outfile):
     if PLOT:
         # plot results
         plot(outfile, non_dev, dev)
-    # save results
-    pd.concat([non_dev, dev]).reset_index(drop=True).to_csv('results/{}.csv'.format(outfile), index=False)
+    if SAVE:
+        # save results
+        pd.concat([non_dev, dev]).reset_index(drop=True).to_csv('results/{}.csv'.format(outfile), index=False)
 
     return non_dev, dev
 
@@ -109,12 +115,14 @@ def runNormal(rf, resources, initial_ledgers):
     peer = 0
     # peer allocations in non-deviating case
     allocations, ledgers = propagate(rf, resources, initial_ledgers)
-    # calculate allocations given new state
-    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
     if DEBUG_L1:
-        print("ledgers_non_dev\n-------")
+        print("Ledgers after 1st round")
+        print("-----------------------")
         printLedgers(ledgers)
+
+    # calculate allocations given new state
+    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
     # store results for non-deviating case
     non_dev = pd.DataFrame.from_dict({
@@ -137,7 +145,7 @@ def runDeviate(rf, resources, initial_ledgers, deviation):
     if DEBUG_L1:
         printLedgers(initial_ledgers)
 
-    for i in np.arange(resources[peer] + 1, step=deviation):
+    for i in np.arange(resources[peer] + deviation, step=deviation):
         # set peer 0's deviating allocation
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
@@ -153,6 +161,7 @@ def runDeviate(rf, resources, initial_ledgers, deviation):
         if DEBUG_L1:
             print("ledgers\n-------")
             printLedgers(ledgers_dev)
+            print()
 
         dev = dev.append({
             'b01': allocations[0][1],
@@ -183,23 +192,27 @@ def totalAllocationToPeer(rf, resources, ledgers, peer):
         allocation = calculateAllocations(rf, resource, ledgers[i])
 
         if DEBUG_L1:
-            print("Peer {} sends {} to {}".format(i, allocation[peer], peer))
+            print("Peer {} sends {} to {}\n".format(i, allocation[peer], peer))
 
         total += allocation[peer]
     return total
 
+def calculateAllocationsFromWeights(resource, weights):
+    total_weight = sum(weight for weight in weights.values())
+    return {p: resource * weight / total_weight for p, weight in weights.items()}
+
 # calculate how a peer with `resource` allocations to its peers given their
 # `ledgers` and the `rf`
 def calculateAllocations(rf, resource, ledgers):
-    total_weight = sum(rf(debtRatio(l)) for l in ledgers.values())
-
+    weights = {p: rf(debtRatio(l)) for p, l in ledgers.items()}
     if DEBUG_L2:
         print("resource: {}".format(resource))
-        print("total_weight: {}".format(total_weight))
         for p, l in ledgers.items():
-            print("rf(debtRatio(l)): {}".format(rf(debtRatio(l))))
+            print("rf(debtRatio(peer {})): {}".format(p, rf(debtRatio(l))))
+        total_weight = sum(weight for weight in weights.values())
+        print("total_weight: {}\n".format(total_weight))
 
-    return {p: resource * rf(debtRatio(l)) / total_weight for p, l in ledgers.items()}
+    return calculateAllocationsFromWeights(resource, weights)
 
 # calculate values of x-axis in 2D slice of results
 def get2DSlice(B, non_dev, dev):
@@ -212,15 +225,6 @@ def get2DSlice(B, non_dev, dev):
     dev_xs /= norm
 
     return non_dev_xs, dev_xs
-
-# update ledger values based on a round of allocations
-def updateLedgers(ledgers, allocations):
-    new_ledgers = copyLedgers(ledgers)
-    for sender in allocations.keys():
-        for receiver, allocation in allocations[sender].items():
-            new_ledgers[sender][receiver].sent_to   += allocation
-            new_ledgers[receiver][sender].recv_from += allocation
-    return new_ledgers
 
 def plot(outfile, non_dev, dev):
     payoff = non_dev.iloc[0]['payoff']
@@ -252,14 +256,6 @@ def plot3D(non_dev, dev):
 
     plt.savefig('output.pdf')
 
-# function to print ledgers. cleaner solution would be nice
-def printLedgers(ledgers):
-    for i, ls in ledgers.items():
-        print("{}: ".format(i), end='')
-        for j, l in ls.items():
-            print("{{{}: ({}, {})}}".format(j, l.recv_from, l.sent_to), end='')
-        print()
-
 # Ledger
 # ------
 
@@ -273,6 +269,12 @@ def debtRatio(ledger):
     return ledger.recv_from / (ledger.sent_to)
 
 def initialLedgers(rep_type, resources):
+    if rep_type == 'zero':
+        return defaultdict(lambda: {},
+            {i: {j: newLedger(0, 0) for j in range(len(resources)) if j != i}
+                                    for i in range(len(resources))
+            })
+
     if rep_type == 'flat':
         return defaultdict(lambda: {},
         {
@@ -280,14 +282,28 @@ def initialLedgers(rep_type, resources):
             1: {0: newLedger(1, 1), 2: newLedger(1, 1)},
             2: {1: newLedger(1, 1), 0: newLedger(1, 1)},
         })
+
     if rep_type == 'proportional':
-        ledgers = defaultdict(lambda: {})
-        reputations = [r / reduce(gcd, resources) for r in resources]
-        for i, j in combinations(range(len(reputations)), 2):
-            ledgers = addLedgerPair(ledgers, i, j, reputations[i], reputations[j])
-        return ledgers
+        ledgers = initialLedgers('zero', resources)
+        reputations = defaultdict(lambda: {})
+        for i in range(len(resources)):
+            resource = resources[i]
+            weights = {j: resource_j for j, resource_j in enumerate(resources) if j != i}
+            reputations[i] = calculateAllocationsFromWeights(resource, weights)
+            initial_ledgers = updateLedgers(ledgers, reputations)
+        return initial_ledgers
+
     # TODO: return error?
     return defaultdict(lambda: {})
+
+# update ledger values based on a round of allocations
+def updateLedgers(ledgers, allocations):
+    new_ledgers = copyLedgers(ledgers)
+    for sender in allocations.keys():
+        for receiver, allocation in allocations[sender].items():
+            new_ledgers[sender][receiver].sent_to   += allocation
+            new_ledgers[receiver][sender].recv_from += allocation
+    return new_ledgers
 
 def addLedgerPair(ledgers, i, j, bij, bji):
     new_ledgers = copyLedgers(ledgers)
@@ -302,6 +318,14 @@ def copyLedgers(ledgers):
         for j, ledger in ledgers[i].items():
             new_ledgers[i][j] = newLedger(ledger.recv_from, ledger.sent_to)
     return new_ledgers
+
+# function to print ledgers. cleaner solution would be nice
+def printLedgers(ledgers):
+    for i, ls in ledgers.items():
+        print("{}: ".format(i), end='')
+        for j, l in ls.items():
+            print("{{{}: ({}, {})}}".format(j, l.recv_from, l.sent_to), end='')
+        print()
 
 if __name__ == '__main__':
     main(sys.argv[1:])
