@@ -62,7 +62,7 @@ def main(argv):
     cli.add_argument(
         '-i',
         '--initial-reputation',
-        choices=['flat', 'proportional'],
+        choices=['ones', 'split', 'proportional'],
         action='append',
     )
     cli.add_argument(
@@ -70,6 +70,16 @@ def main(argv):
         '--deviation',
         type=float,
         default=1,
+    )
+    cli.add_argument(
+        '--no-plot',
+        action='store_true',
+        default=False,
+    )
+    cli.add_argument(
+        '--no-save',
+        action='store_true',
+        default=False,
     )
     cli.add_argument(
         '-o',
@@ -92,19 +102,18 @@ def main(argv):
                     print("Initial Ledgers")
                     print("---------------")
                     printLedgers(ledgers)
-                run(resources, rfs[function], ledgers, args.deviation, outfile)
+                run(resources, rfs[function], ledgers, args.deviation, outfile, not args.no_plot, not args.no_save)
 
 # NOTE: currently assumes **exactly 3 peers**
-def run(resources, rf, ledgers, deviation, outfile):
+def run(resources, rf, ledgers, deviation, outfile, plot_results=False, save_results=False):
     # test function
     non_dev = runNormal(rf, resources, ledgers)
     dev = runDeviate(rf, resources, ledgers, deviation)
     non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
-    if PLOT:
-        # plot results
+
+    if plot_results:
         plot(outfile, non_dev, dev)
-    if SAVE:
-        # save results
+    if save_results:
         pd.concat([non_dev, dev]).reset_index(drop=True).to_csv('results/{}.csv'.format(outfile), index=False)
 
     return non_dev, dev
@@ -240,7 +249,13 @@ def plot(outfile, non_dev, dev):
     parts = outfile.split('.')[0].split('-')
     title = "{}, {}: {{{}}}".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
 
+    # general matplotlib settings
+    plt.rc('text', usetex=True)
+    plt.tight_layout()
+
     plt.title(title)
+    plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^t}{B_0}\right)$')
+    plt.ylabel(r'Payoff ($p_0$)')
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
 
@@ -259,32 +274,44 @@ def plot3D(non_dev, dev):
 # Ledger
 # ------
 
-def newLedger(recv_from=0, sent_to=0):
-    l = namedtuple('Ledger', ['recv_from', 'sent_to'])
-    l.recv_from = recv_from
-    l.sent_to   = sent_to
-    return l
+class Ledger:
+    def __init__(self, recv_from, sent_to):
+        self.recv_from = recv_from
+        self.sent_to   = sent_to
+
+    def __eq__(self, other):
+        return self.recv_from == other.recv_from and self.sent_to == other.sent_to
+
+    def __str__(self):
+        return "({}, {})".format(self.recv_from, self.sent_to)
+
+    def __repr__(self):
+        return self.__str__()
 
 def debtRatio(ledger):
     return ledger.recv_from / (ledger.sent_to)
 
-def initialLedgers(rep_type, resources):
-    if rep_type == 'zero':
+def initialLedgers(rep_type, resources, c=0):
+    if rep_type == 'constant':
         return defaultdict(lambda: {},
-            {i: {j: newLedger(0, 0) for j in range(len(resources)) if j != i}
+            {i: {j: Ledger(c, c) for j in range(len(resources)) if j != i}
                                     for i in range(len(resources))
             })
 
-    if rep_type == 'flat':
-        return defaultdict(lambda: {},
-        {
-            0: {1: newLedger(1, 1), 2: newLedger(1, 1)},
-            1: {0: newLedger(1, 1), 2: newLedger(1, 1)},
-            2: {1: newLedger(1, 1), 0: newLedger(1, 1)},
-        })
+    if rep_type == 'ones':
+        return initialLedgers('constant', resources, c=1)
+
+    if rep_type == 'split':
+        ledgers = defaultdict(lambda: {})
+        for i, resource_i in enumerate(resources):
+            for j, resource_j in enumerate(resources):
+                if j != i:
+                    num_partners = len(resources) - 1
+                    ledgers[i][j] = Ledger(resource_j / num_partners, resource_i / num_partners)
+        return ledgers
 
     if rep_type == 'proportional':
-        ledgers = initialLedgers('zero', resources)
+        ledgers = initialLedgers('constant', resources, c=0)
         reputations = defaultdict(lambda: {})
         for i in range(len(resources)):
             resource = resources[i]
@@ -307,8 +334,8 @@ def updateLedgers(ledgers, allocations):
 
 def addLedgerPair(ledgers, i, j, bij, bji):
     new_ledgers = copyLedgers(ledgers)
-    new_ledgers[i][j] = newLedger(bji, bij)
-    new_ledgers[j][i] = newLedger(bij, bji)
+    new_ledgers[i][j] = Ledger(bji, bij)
+    new_ledgers[j][i] = Ledger(bij, bji)
     return new_ledgers
 
 def copyLedgers(ledgers):
@@ -316,7 +343,7 @@ def copyLedgers(ledgers):
     new_ledgers = initialLedgers('', [])
     for i in ledgers.keys():
         for j, ledger in ledgers[i].items():
-            new_ledgers[i][j] = newLedger(ledger.recv_from, ledger.sent_to)
+            new_ledgers[i][j] = Ledger(ledger.recv_from, ledger.sent_to)
     return new_ledgers
 
 # function to print ledgers. cleaner solution would be nice
@@ -324,7 +351,7 @@ def printLedgers(ledgers):
     for i, ls in ledgers.items():
         print("{}: ".format(i), end='')
         for j, l in ls.items():
-            print("{{{}: ({}, {})}}".format(j, l.recv_from, l.sent_to), end='')
+            print("{{{}: {}}}".format(j, l), end='')
         print()
 
 if __name__ == '__main__':
