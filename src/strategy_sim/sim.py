@@ -12,6 +12,7 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 #from mpl_toolkits.mplot3d import Axes3D
 # selective imports
+from copy import deepcopy
 from math import exp, gcd
 from functools import reduce
 from itertools import combinations
@@ -24,8 +25,6 @@ __license__ = "mit"
 # TODO: make these params
 DEBUG_L1 = False
 DEBUG_L2 = DEBUG_L1 and False
-PLOT = True
-SAVE = True
 
 # types
 #   -   reciprocation function: accepts ledgers, peer num, returns weight for peer
@@ -88,9 +87,10 @@ def main(argv):
     )
     if len(argv) == 0:
         cli.print_usage()
-        exit()
+        sys.exit()
     args = cli.parse_args(argv)
 
+    # TODO: this is gross
     for function in args.reciprocation_function:
         for resources in args.resources:
             for rep in args.initial_reputation:
@@ -101,10 +101,42 @@ def main(argv):
                 if DEBUG_L1:
                     print("Initial Ledgers")
                     print("---------------")
-                    printLedgers(ledgers)
+                    print(ledgers)
                 run(resources, rfs[function], ledgers, args.deviation, outfile, not args.no_plot, not args.no_save)
 
-# NOTE: currently assumes **exactly 3 peers**
+def newThing(rf, resources, ledgers):
+    peer = 1
+    amt = resources[peer] / 2
+
+    non_dev = runNormal(rf, resources, ledgers)
+    results = pd.DataFrame(columns=['B1', 'deviation'])
+    d = 0.1
+    for b1 in np.arange(-amt, amt+d, step=d):
+        tmp = resources
+        tmp[peer] = b1
+        dev = runDeviate(rf, tmp, ledgers, 0.1)
+        dev_max = dev.loc[dev['payoff'].idxmax()]
+        deviation = dev_max['payoff'] - non_dev.iloc[0]['payoff']
+
+        results = results.append({
+            'B1': b1,
+            'deviation': deviation,
+        }, ignore_index=True)
+
+    return results
+
+def plotNewThing(results):
+    outfile = 'test'
+    plt.scatter(results['B1'], results['deviation'], color='blue')
+
+    # general matplotlib settings
+    plt.rc('text', usetex=True)
+    #plt.tight_layout()
+
+    plt.title(outfile)
+    plt.savefig("plots/{}.pdf".format(outfile))
+    plt.clf()
+
 def run(resources, rf, ledgers, deviation, outfile, plot_results=False, save_results=False):
     # test function
     non_dev = runNormal(rf, resources, ledgers)
@@ -128,7 +160,7 @@ def runNormal(rf, resources, initial_ledgers):
     if DEBUG_L1:
         print("Ledgers after 1st round")
         print("-----------------------")
-        printLedgers(ledgers)
+        print(ledgers)
 
     # calculate allocations given new state
     payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
@@ -152,7 +184,7 @@ def runDeviate(rf, resources, initial_ledgers, deviation):
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
     if DEBUG_L1:
-        printLedgers(initial_ledgers)
+        print(initial_ledgers)
 
     for i in np.arange(resources[peer] + deviation, step=deviation):
         # set peer 0's deviating allocation
@@ -169,7 +201,7 @@ def runDeviate(rf, resources, initial_ledgers, deviation):
 
         if DEBUG_L1:
             print("ledgers\n-------")
-            printLedgers(ledgers_dev)
+            print(ledgers_dev)
             print()
 
         dev = dev.append({
@@ -223,6 +255,9 @@ def calculateAllocations(rf, resource, ledgers):
 
     return calculateAllocationsFromWeights(resource, weights)
 
+# Plotting
+# --------
+
 # calculate values of x-axis in 2D slice of results
 def get2DSlice(B, non_dev, dev):
     non_dev_xs = np.sqrt(B ** 2 - 2 * B * non_dev['b02'] + non_dev['b02'] ** 2 + non_dev['b01'] ** 2)
@@ -251,13 +286,17 @@ def plot(outfile, non_dev, dev):
 
     # general matplotlib settings
     plt.rc('text', usetex=True)
-    plt.tight_layout()
+    #plt.tight_layout()
 
     plt.title(title)
     plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^t}{B_0}\right)$')
     plt.ylabel(r'Payoff ($p_0$)')
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
+
+#def newPlot(outfile, non_dev, dev):
+    #fig = plt.figure(1, figsize=(5,5))
+    #ax = fig.add_suplot(1,1,1)
 
 def plot3D(non_dev, dev):
     fig = plt.figure()
@@ -283,7 +322,7 @@ class Ledger:
         return self.recv_from == other.recv_from and self.sent_to == other.sent_to
 
     def __str__(self):
-        return "({}, {})".format(self.recv_from, self.sent_to)
+        return "({:6.3f}, {:6.3f})".format(self.recv_from, self.sent_to)
 
     def __repr__(self):
         return self.__str__()
@@ -295,7 +334,7 @@ def initialLedgers(rep_type, resources, c=0):
     if rep_type == 'constant':
         return defaultdict(lambda: {},
             {i: {j: Ledger(c, c) for j in range(len(resources)) if j != i}
-                                    for i in range(len(resources))
+                                 for i in range(len(resources))
             })
 
     if rep_type == 'ones':
@@ -325,7 +364,7 @@ def initialLedgers(rep_type, resources, c=0):
 
 # update ledger values based on a round of allocations
 def updateLedgers(ledgers, allocations):
-    new_ledgers = copyLedgers(ledgers)
+    new_ledgers = deepcopy(ledgers)
     for sender in allocations.keys():
         for receiver, allocation in allocations[sender].items():
             new_ledgers[sender][receiver].sent_to   += allocation
@@ -333,26 +372,10 @@ def updateLedgers(ledgers, allocations):
     return new_ledgers
 
 def addLedgerPair(ledgers, i, j, bij, bji):
-    new_ledgers = copyLedgers(ledgers)
+    new_ledgers = deepcopy(ledgers)
     new_ledgers[i][j] = Ledger(bji, bij)
     new_ledgers[j][i] = Ledger(bij, bji)
     return new_ledgers
-
-def copyLedgers(ledgers):
-    # can't deepcopy() a dict of dicts of namedtuples...
-    new_ledgers = initialLedgers('', [])
-    for i in ledgers.keys():
-        for j, ledger in ledgers[i].items():
-            new_ledgers[i][j] = Ledger(ledger.recv_from, ledger.sent_to)
-    return new_ledgers
-
-# function to print ledgers. cleaner solution would be nice
-def printLedgers(ledgers):
-    for i, ls in ledgers.items():
-        print("{}: ".format(i), end='')
-        for j, l in ls.items():
-            print("{{{}: {}}}".format(j, l), end='')
-        print()
 
 if __name__ == '__main__':
     main(sys.argv[1:])

@@ -14,3 +14,4 @@ if __name__ == '__main__':
     # call with `python -i`k and `results` will be available in shell
     results = main(sys.argv[1:])
     nd = results.iloc[0]
+    better = results[results['payoff'] > nd['payoff']]
