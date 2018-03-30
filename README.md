@@ -1,7 +1,10 @@
 strategy-sim
 ============
 
-Simple Bitswap strategy simulator.
+This is a Bitswap strategy simulation and analysis tool. Bitswap is a submodule of the
+[InterPlanetary File System](https://github.com/ipfs/ipfs). More information on
+Bitswap can be found in the [Bitswap
+spec](https://github.com/ipfs/spec/tree/master/bitswap).
 
 Description
 ===========

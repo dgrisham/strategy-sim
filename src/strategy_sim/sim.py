@@ -71,6 +71,11 @@ def main(argv):
         default=1,
     )
     cli.add_argument(
+        '--range',
+        nargs=2,
+        type=int,
+    )
+    cli.add_argument(
         '--no-plot',
         action='store_true',
         default=False,
@@ -102,21 +107,28 @@ def main(argv):
                     print("Initial Ledgers")
                     print("---------------")
                     print(ledgers)
-                run(resources, rfs[function], ledgers, args.deviation, outfile, not args.no_plot, not args.no_save)
+                if args.range:
+                    peer, amt = args.range
+                    runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, outfile, not args.no_plot)
+                else:
+                    run(resources, rfs[function], ledgers, args.deviation, outfile, not args.no_plot, not args.no_save)
 
-def newThing(rf, resources, ledgers):
-    peer = 1
-    amt = resources[peer] / 2
+def runRange(rf, resources, ledgers, peer, amt, outfile_base, plot_results):
+    outfile = '{}-range_{}_{}'.format(outfile_base, peer, amt)
+    results = rangeEval(rf, resources, ledgers, peer, amt)
+    if plot_results:
+        plotRangeEval(results, outfile)
 
-    non_dev = runNormal(rf, resources, ledgers)
+def rangeEval(rf, resources, ledgers, peer, amt):
     results = pd.DataFrame(columns=['B1', 'deviation'])
     d = 0.1
-    for b1 in np.arange(-amt, amt+d, step=d):
+    for b1 in np.arange(resources[peer] - amt, resources[peer] + amt + d, step=d):
         tmp = resources
         tmp[peer] = b1
+        non_dev = runNormal(rf, tmp, ledgers)
         dev = runDeviate(rf, tmp, ledgers, 0.1)
         dev_max = dev.loc[dev['payoff'].idxmax()]
-        deviation = dev_max['payoff'] - non_dev.iloc[0]['payoff']
+        deviation = (dev_max['b01'] - non_dev.iloc[0]['b01']) / resources[0]
 
         results = results.append({
             'B1': b1,
@@ -125,15 +137,21 @@ def newThing(rf, resources, ledgers):
 
     return results
 
-def plotNewThing(results):
-    outfile = 'test'
+def plotRangeEval(results, outfile):
     plt.scatter(results['B1'], results['deviation'], color='blue')
 
     # general matplotlib settings
-    plt.rc('text', usetex=True)
+    #plt.rc('text', usetex=True)
     #plt.tight_layout()
 
-    plt.title(outfile)
+    parts = outfile.split('-')
+    _, peer, amt = parts[3].split('_')
+    title = 'Range ({}, {}), {}, {}: {{{}}}'.format(peer, amt, parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
+
+    plt.title(title)
+
+    plt.xlabel(r'Peer 1 Resource')
+    plt.ylabel(r'Deviation Ratio')
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
 
@@ -165,6 +183,8 @@ def runNormal(rf, resources, initial_ledgers):
     # calculate allocations given new state
     payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
+    #print('resources: {}'.format(resources))
+    #print("allocations; {}".format(allocations))
     # store results for non-deviating case
     non_dev = pd.DataFrame.from_dict({
         'b01': [allocations[0][1]],
@@ -271,6 +291,8 @@ def get2DSlice(B, non_dev, dev):
     return non_dev_xs, dev_xs
 
 def plot(outfile, non_dev, dev):
+    fig, ax = plt.subplots()
+
     payoff = non_dev.iloc[0]['payoff']
     better = dev['payoff'] > payoff
     same = np.isclose(dev['payoff'], payoff)
@@ -281,7 +303,7 @@ def plot(outfile, non_dev, dev):
     plt.scatter(dev['xs'][same], dev['payoff'][same], color='#6da5ff')
     plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
-    parts = outfile.split('.')[0].split('-')
+    parts = outfile.split('-')
     title = "{}, {}: {{{}}}".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
 
     # general matplotlib settings
@@ -291,8 +313,10 @@ def plot(outfile, non_dev, dev):
     plt.title(title)
     plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^t}{B_0}\right)$')
     plt.ylabel(r'Payoff ($p_0$)')
+    fig.tight_layout()
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
+    plt.close()
 
 #def newPlot(outfile, non_dev, dev):
     #fig = plt.figure(1, figsize=(5,5))
