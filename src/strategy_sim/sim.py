@@ -352,7 +352,7 @@ class Ledger:
         return self.__str__()
 
 def debtRatio(ledger):
-    return ledger.recv_from / (ledger.sent_to)
+    return ledger.recv_from / ledger.sent_to
 
 def initialLedgers(rep_type, resources, c=0):
     if rep_type == 'constant':
