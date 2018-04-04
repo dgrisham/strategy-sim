@@ -5,13 +5,12 @@ import sys
 import argparse
 
 from math import gcd
-from numpy import tanh
+from numpy import exp, tanh
 from copy import deepcopy
 from itertools import product
 
 # local imports
-from sim import run, runRange
-from ledger import initialLedgers
+from sim import run, runRange, initialLedgers
 
 # Main
 # ----

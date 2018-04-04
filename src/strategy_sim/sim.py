@@ -213,6 +213,10 @@ def plot(outfile, non_dev, dev):
     plt.title(title)
     plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^t}{B_0}\right)$')
     plt.ylabel(r'Payoff ($p_0$)')
+
+    best = dev['payoff'].append(non_dev['payoff']).max()
+    plt.ylim(ymin=0, ymax=best+best)
+
     fig.tight_layout()
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
@@ -226,9 +230,12 @@ def plotRangeEval(results, outfile):
     #plt.tight_layout()
 
     parts = outfile.split('-')
-    if len(parts) == 3:
-        _, peer, amt = parts[3].split('_')
-        title = 'Range ({}, {}), {}, {}: {{{}}}'.format(peer, amt, parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
+    if len(parts) == 4:
+        peer, amt = map(int, parts[3].split('_')[1:])
+        parts[2] = parts[2].split('_')
+        resource = int(parts[2][peer])
+        parts[2][peer] = "[{}, {}]".format(resource - amt, resource + amt)
+        title = '{}, {}: {{{}}}'.format(parts[0].title(), parts[1].title(), ", ".join(parts[2]))
     else:
         title = outfile
 
@@ -236,5 +243,6 @@ def plotRangeEval(results, outfile):
 
     plt.xlabel(r'Peer 1 Resource')
     plt.ylabel(r'Deviation Ratio')
+    plt.ylim(-1, 1)
     plt.savefig("plots/{}.pdf".format(outfile))
     plt.clf()
