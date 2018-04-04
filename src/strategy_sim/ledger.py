@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from copy import deepcopy
-from collections import defaultdict
 
 class Ledger:
     def __init__(self, recv_from, sent_to):
@@ -20,38 +19,6 @@ class Ledger:
 
 def debtRatio(ledger):
     return ledger.recv_from / ledger.sent_to
-
-def initialLedgers(rep_type, resources, c=0):
-    if rep_type == 'constant':
-        return defaultdict(lambda: {},
-            {i: {j: Ledger(c, c) for j in range(len(resources)) if j != i}
-                                 for i in range(len(resources))
-            })
-
-    if rep_type == 'ones':
-        return initialLedgers('constant', resources, c=1)
-
-    if rep_type == 'split':
-        ledgers = defaultdict(lambda: {})
-        for i, resource_i in enumerate(resources):
-            for j, resource_j in enumerate(resources):
-                if j != i:
-                    num_partners = len(resources) - 1
-                    ledgers[i][j] = Ledger(resource_j / num_partners, resource_i / num_partners)
-        return ledgers
-
-    if rep_type == 'proportional':
-        ledgers = initialLedgers('constant', resources, c=0)
-        reputations = defaultdict(lambda: {})
-        for i in range(len(resources)):
-            resource = resources[i]
-            weights = {j: resource_j for j, resource_j in enumerate(resources) if j != i}
-            reputations[i] = calculateAllocationsFromWeights(resource, weights)
-            initial_ledgers = updateLedgers(ledgers, reputations)
-        return initial_ledgers
-
-    # TODO: return error?
-    return defaultdict(lambda: {})
 
 # update ledger values based on a round of allocations
 def updateLedgers(ledgers, allocations):

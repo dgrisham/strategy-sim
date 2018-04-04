@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
 import pandas as pd
 import numpy as np
+
+from collections import defaultdict
 
 import matplotlib as mpl
 mpl.use('Agg')
@@ -10,7 +13,7 @@ import matplotlib.pyplot as plt
 #from mpl_toolkits.mplot3d import Axes3D
 
 # local imports
-from ledger import debtRatio, updateLedgers
+from ledger import Ledger, debtRatio, updateLedgers
 
 __author__ = "David Grisham"
 __copyright__ = "David Grisham"
@@ -126,15 +129,48 @@ def totalAllocationToPeer(rf, resources, ledgers, peer):
 
     return total
 
-def calculateAllocationsFromWeights(resource, weights):
-    total_weight = sum(weight for weight in weights.values())
-    return {p: resource * weight / total_weight for p, weight in weights.items()}
-
 # calculate how a peer with `resource` allocations to its peers given their
 # `ledgers` and the `rf`
 def calculateAllocations(rf, resource, ledgers):
     weights = {p: rf(debtRatio(l)) for p, l in ledgers.items()}
     return calculateAllocationsFromWeights(resource, weights)
+
+def calculateAllocationsFromWeights(resource, weights):
+    total_weight = sum(weight for weight in weights.values())
+    return {p: resource * weight / total_weight for p, weight in weights.items()}
+
+# ledger initialization options
+def initialLedgers(rep_type, resources, c=0):
+    if rep_type == 'constant':
+        return defaultdict(lambda: {},
+            {i: {j: Ledger(c, c) for j in range(len(resources)) if j != i}
+                                 for i in range(len(resources))
+            })
+
+    if rep_type == 'ones':
+        return initialLedgers('constant', resources, c=1)
+
+    if rep_type == 'split':
+        ledgers = defaultdict(lambda: {})
+        for i, resource_i in enumerate(resources):
+            for j, resource_j in enumerate(resources):
+                if j != i:
+                    num_partners = len(resources) - 1
+                    ledgers[i][j] = Ledger(resource_j / num_partners, resource_i / num_partners)
+        return ledgers
+
+    if rep_type == 'proportional':
+        ledgers = initialLedgers('constant', resources, c=0)
+        reputations = defaultdict(lambda: {})
+        for i in range(len(resources)):
+            resource = resources[i]
+            weights = {j: resource_j for j, resource_j in enumerate(resources) if j != i}
+            reputations[i] = calculateAllocationsFromWeights(resource, weights)
+            initial_ledgers = updateLedgers(ledgers, reputations)
+        return initial_ledgers
+
+    # TODO: return error?
+    return defaultdict(lambda: {})
 
 # Plotting
 # --------

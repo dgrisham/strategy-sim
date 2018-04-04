@@ -11,6 +11,8 @@
 import sys
 from setuptools import setup
 
+sys.path.append('src/strategy_sim')
+
 # Add here console scripts and other entry points in ini-style format
 entry_points = """
 [console_scripts]
