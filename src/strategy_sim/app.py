@@ -44,10 +44,14 @@ def main(argv):
         action='append',
     )
     cli.add_argument(
-        '-d',
-        '--deviation',
+        '--dev-step',
         type=float,
-        default=1,
+        default=0.1,
+    )
+    cli.add_argument(
+        '--range-step',
+        type=float,
+        default=0.1,
     )
     cli.add_argument(
         '--range',
@@ -81,9 +85,9 @@ def main(argv):
         ledgers = initialLedgers(rep, resources)
         if args.range:
             peer, amt = args.range
-            runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, outfile, not args.no_plot)
+            runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
         else:
-            run(resources, rfs[function], ledgers, args.deviation, outfile, not args.no_plot, not args.no_save)
+            run(resources, rfs[function], ledgers, args.step, outfile, not args.no_plot, not args.no_save)
 
 if __name__ == '__main__':
     main(sys.argv[1:])

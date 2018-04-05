@@ -20,9 +20,9 @@ __copyright__ = "David Grisham"
 __license__ = "mit"
 
 # Run the standard simulation -- test all of peer 0's allocation strategies
-def run(resources, rf, ledgers, deviation, outfile, plot_results=False, save_results=False):
+def run(resources, rf, ledgers, dev_step, outfile, plot_results=False, save_results=False):
     non_dev = runNormal(rf, resources, ledgers)
-    dev = runDeviate(rf, resources, ledgers, deviation)
+    dev = runDeviate(rf, resources, ledgers, dev_step)
     non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
 
     if plot_results:
@@ -34,20 +34,19 @@ def run(resources, rf, ledgers, deviation, outfile, plot_results=False, save_res
 
 # Run the range simulation -- vary peer 1's resource and measure peer 0's optimal
 # deviation in each case
-def runRange(rf, resources, ledgers, peer, amt, outfile_base, plot_results):
+def runRange(rf, resources, ledgers, peer, amt, range_step, dev_step, outfile_base, plot_results):
     outfile = '{}-range_{}_{}'.format(outfile_base, peer, amt)
-    results = rangeEval(rf, resources, ledgers, peer, amt)
+    results = rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step)
     if plot_results:
         plotRangeEval(results, outfile)
 
-def rangeEval(rf, resources, ledgers, peer, amt):
+def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
     results = pd.DataFrame(columns=['B1', 'deviation'])
-    d = 0.1
-    for b1 in np.arange(resources[peer] - amt, resources[peer] + amt + d, step=d):
+    for b1 in np.arange(resources[peer] - amt, resources[peer] + amt + range_step, step=range_step):
         tmp = resources
         tmp[peer] = b1
         non_dev = runNormal(rf, tmp, ledgers)
-        dev = runDeviate(rf, tmp, ledgers, 0.1)
+        dev = runDeviate(rf, tmp, ledgers, dev_step)
         dev_max = dev.loc[dev['payoff'].idxmax()]
         deviation = (dev_max['b01'] - non_dev.iloc[0]['b01']) / resources[0]
 
@@ -78,7 +77,7 @@ def runNormal(rf, resources, initial_ledgers):
     return non_dev
 
 # run all deviating cases
-def runDeviate(rf, resources, initial_ledgers, deviation):
+def runDeviate(rf, resources, initial_ledgers, dev_step):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
@@ -86,7 +85,7 @@ def runDeviate(rf, resources, initial_ledgers, deviation):
     # test a bunch of deviating cases, store results
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
-    for i in np.arange(resources[peer] + deviation, step=deviation):
+    for i in np.arange(resources[peer] + dev_step, step=dev_step):
         # set peer 0's deviating allocation
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
