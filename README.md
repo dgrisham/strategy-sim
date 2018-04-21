@@ -73,7 +73,7 @@ There are two primary output files from this program:
     each of the deviating rounds. The columns are:
     -   `b01`: the amount of data user 0 sends to user 1
     -   `b02`: the amount of data user 0 sends to user 2
-    -   `payoff`: the payoff user 
+    -   `payoff`: the payoff of user 0
     -   `xs`: the proportion of user 0's data sent to user 1 (this column will
         likely be removed in the future)
 2.  A plot file that plots the `xs` column from the `csv` against the `payoff`
