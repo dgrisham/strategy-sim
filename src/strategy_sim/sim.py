@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 import numpy as np
 
+from copy import deepcopy
 from collections import defaultdict
 
 import matplotlib as mpl
@@ -22,7 +23,7 @@ __license__ = "mit"
 # Run the standard simulation -- test all of peer 0's allocation strategies
 def run(resources, rf, ledgers, dev_step, outfile, plot_results=False, save_results=False):
     non_dev = runNormal(rf, resources, ledgers)
-    dev = runDeviate(rf, resources, ledgers, dev_step)
+    dev = runDeviate(rf, resources, ledgers, dev_step, non_dev.iloc[0]['b01'])
     non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
 
     if plot_results:
@@ -46,7 +47,7 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
         tmp = resources
         tmp[peer] = b1
         non_dev = runNormal(rf, tmp, ledgers)
-        dev = runDeviate(rf, tmp, ledgers, dev_step)
+        dev = runDeviate(rf, tmp, ledgers, dev_step, non_dev.iloc[0]['b01'])
         dev_max = dev.loc[dev['payoff'].idxmax()]
         deviation = (dev_max['b01'] - non_dev.iloc[0]['b01']) / resources[0]
 
@@ -58,11 +59,13 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
     return results
 
 # run non_deviating case
-def runNormal(rf, resources, initial_ledgers):
-    # peer that we'll test as the deviating peer
+def runNormal(rf, resources, initial_ledgers, rounds=1):
+    # peer that we want to calculate the payoff of
     peer = 0
     # peer allocations in non-deviating case
-    allocations, ledgers = propagate(rf, resources, initial_ledgers)
+    ledgers = deepcopy(initial_ledgers)
+    for _ in range(rounds):
+        allocations, ledgers = propagate(rf, resources, ledgers)
 
     # calculate allocations given new state
     payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
@@ -77,7 +80,7 @@ def runNormal(rf, resources, initial_ledgers):
     return non_dev
 
 # run all deviating cases
-def runDeviate(rf, resources, initial_ledgers, dev_step):
+def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
@@ -86,6 +89,8 @@ def runDeviate(rf, resources, initial_ledgers, dev_step):
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
     for i in np.arange(resources[peer] + dev_step, step=dev_step):
+        if i == non_dev_amt:
+            continue
         # set peer 0's deviating allocation
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
@@ -201,7 +206,7 @@ def plot(outfile, non_dev, dev):
 
     parts = outfile.split('-')
     if len(parts) == 3:
-        title = "{}, {}: {{{}}}".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
+        title = "{}, {}: [{}]".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
     else:
         title = outfile
 
@@ -210,7 +215,7 @@ def plot(outfile, non_dev, dev):
     #plt.tight_layout()
 
     plt.title(title)
-    plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^t}{B_0}\right)$')
+    plt.xlabel(r'Proportion sent to 1 $\left(\frac{b_{01}^1 - b_{01}^0}{B_0}\right)$')
     plt.ylabel(r'Payoff ($p_0$)')
 
     best = dev['payoff'].append(non_dev['payoff']).max()
