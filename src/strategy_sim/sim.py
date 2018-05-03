@@ -21,9 +21,9 @@ __copyright__ = "David Grisham"
 __license__ = "mit"
 
 # Run the standard simulation -- test all of peer 0's allocation strategies
-def run(resources, rf, ledgers, dev_step, outfile, plot_results=False, save_results=False):
-    non_dev = runNormal(rf, resources, ledgers)
-    dev = runDeviate(rf, resources, ledgers, dev_step, non_dev.iloc[0]['b01'])
+def run(resources, rf, rounds, ledgers, dev_step, outfile, plot_results=False, save_results=False):
+    non_dev = runNormal(rf, resources, rounds, ledgers)
+    dev = runDeviate(rf, resources, rounds, ledgers, dev_step, non_dev.iloc[0]['b01'])
     non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
 
     if plot_results:
@@ -59,19 +59,19 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
     return results
 
 # run non_deviating case
-def runNormal(rf, resources, initial_ledgers, rounds=1):
+def runNormal(rf, resources, rounds, initial_ledgers):
+    if rounds < 1:
+        print(f"Rounds should be greater than 1, is {rounds}")
+        return None
     # peer that we want to calculate the payoff of
     peer = 0
     # peer allocations in non-deviating case
     ledgers = deepcopy(initial_ledgers)
-    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
-    # play out the rest of the rounds, sum 0's total payoff
+    # play out the rest of the rounds, sum user 0's total payoff
+    payoff = 0
     for _ in range(rounds):
         allocations, ledgers = propagate(rf, resources, ledgers)
         payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
-
-    # calculate allocations given new state
-    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
 
     # store results for non-deviating case
     non_dev = pd.DataFrame.from_dict({
@@ -83,7 +83,7 @@ def runNormal(rf, resources, initial_ledgers, rounds=1):
     return non_dev
 
 # run all deviating cases
-def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt, rounds=1):
+def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
@@ -99,8 +99,8 @@ def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt, rounds=1):
 
         # update ledgers based on the round's allocations
         ledgers = updateLedgers(initial_ledgers, allocations)
-        # play out the rest of the rounds, sum 0's total payoff
         payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
+        # play out the rest of the rounds, sum 0's total payoff
         for _ in range(rounds-1):
             _, ledgers = propagate(rf, resources, ledgers)
             payoff += totalAllocationToPeer(rf, resources, ledgers, peer)

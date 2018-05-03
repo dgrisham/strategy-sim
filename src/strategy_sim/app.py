@@ -92,7 +92,7 @@ def main(argv):
             peer, amt = args.range
             runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
         else:
-            run(resources, rfs[function], ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
+            run(resources, rfs[function], args.rounds, ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
 
 if __name__ == '__main__':
     main(sys.argv[1:])
