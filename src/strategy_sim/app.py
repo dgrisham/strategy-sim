@@ -44,6 +44,11 @@ def main(argv):
         action='append',
     )
     cli.add_argument(
+        '--rounds',
+        type=int,
+        default=1,
+    )
+    cli.add_argument(
         '--dev-step',
         type=float,
         default=0.1,
@@ -81,7 +86,7 @@ def main(argv):
     for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
         outfile = args.output
         if not outfile:
-            outfile = '{f}-{rep}-{res}-{step}'.format(f=function, rep=rep, res='_'.join(str(r) for r in resources), step=args.dev_step)
+            outfile = '{f}-{rep}-{rounds}-{res}-{step}'.format(f=function, rep=rep, rounds=args.rounds, res='_'.join(str(r) for r in resources), step=args.dev_step)
         ledgers = initialLedgers(rep, resources)
         if args.range:
             peer, amt = args.range

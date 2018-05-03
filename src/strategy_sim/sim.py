@@ -64,8 +64,11 @@ def runNormal(rf, resources, initial_ledgers, rounds=1):
     peer = 0
     # peer allocations in non-deviating case
     ledgers = deepcopy(initial_ledgers)
+    payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
+    # play out the rest of the rounds, sum 0's total payoff
     for _ in range(rounds):
         allocations, ledgers = propagate(rf, resources, ledgers)
+        payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
 
     # calculate allocations given new state
     payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
@@ -80,7 +83,7 @@ def runNormal(rf, resources, initial_ledgers, rounds=1):
     return non_dev
 
 # run all deviating cases
-def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt):
+def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt, rounds=1):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
@@ -95,14 +98,17 @@ def runDeviate(rf, resources, initial_ledgers, dev_step, non_dev_amt):
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
         # update ledgers based on the round's allocations
-        ledgers_dev = updateLedgers(initial_ledgers, allocations)
-        # calculate `peer`'s payoff for next round
-        payoff_dev = totalAllocationToPeer(rf, resources, ledgers_dev, peer)
+        ledgers = updateLedgers(initial_ledgers, allocations)
+        # play out the rest of the rounds, sum 0's total payoff
+        payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
+        for _ in range(rounds-1):
+            _, ledgers = propagate(rf, resources, ledgers)
+            payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
 
         dev = dev.append({
             'b01': allocations[0][1],
             'b02': allocations[0][2],
-            'payoff': payoff_dev
+            'payoff': payoff
         }, ignore_index=True)
 
     return dev
@@ -205,8 +211,12 @@ def plot(outfile, non_dev, dev):
     plt.scatter(non_dev['xs'], non_dev['payoff'], color='black', marker='+')
 
     parts = outfile.split('-')
-    if len(parts) == 3:
-        title = "{}, {}: [{}]".format(parts[0].title(), parts[1].title(), parts[2].replace('_', ', '))
+    if len(parts) == 5:
+        if int(parts[2]) == 1:
+            round_str = 'Round'
+        else:
+            round_str = 'Rounds'
+        title = "{}, {}, {} {}: [{}], {}".format(parts[0].title(), parts[1].title(), parts[2], round_str, parts[3].replace('_', ', '), parts[4])
     else:
         title = outfile
 
