@@ -40,3 +40,7 @@ docs/api/*
 docs/_build/*
 cover/*
 MANIFEST
+
+# plots
+src/strategy_sim/plots
+.pytest_cache
