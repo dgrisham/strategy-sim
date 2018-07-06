@@ -69,11 +69,15 @@ def runNormal(rf, resources, rounds, initial_ledgers):
     ledgers = deepcopy(initial_ledgers)
     # play out the rest of the rounds, sum user 0's total payoff
     payoff = 0
-    for _ in range(rounds):
-        allocations, ledgers = propagate(rf, resources, ledgers)
-        payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
+    payoffs, _, ledgers, allocations = propagateN(rounds, rf, resources, ledgers)
+    # for _ in range(rounds):
+        # _, ledgers, allocations = propagate(rf, resources, ledgers) # TODO: FIX
+        # payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
 
     # store results for non-deviating case
+    # TODO: should I be exporting allocations, or ledgers and/or debt ratios? I think they're
+    # 1-round separate in time, so be careful with this decision (might be a good reason that
+    # I originally chose to do it the way I did)
     non_dev = pd.DataFrame.from_dict({
         'b01': [allocations[0][1]],
         'b02': [allocations[0][2]],
@@ -87,7 +91,7 @@ def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
-    allocations, _ = propagate(rf, resources, initial_ledgers)
+    allocations, _ = propagate(rf, resources, initial_ledgers) # TODO: FIX
     # test a bunch of deviating cases, store results
     dev = pd.DataFrame(columns=['b01', 'b02', 'payoff'])
 
@@ -98,11 +102,11 @@ def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
         allocations[peer] = {1: i, 2: resources[peer] - i}
 
         # update ledgers based on the round's allocations
-        ledgers = updateLedgers(initial_ledgers, allocations)
+        ledgers = updateLedgers(initial_ledgers, allocations, resources)
         payoff = totalAllocationToPeer(rf, resources, ledgers, peer)
         # play out the rest of the rounds, sum 0's total payoff
         for _ in range(rounds-1):
-            _, ledgers = propagate(rf, resources, ledgers)
+            _, ledgers = propagate(rf, resources, ledgers) # TODO: FIX
             payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
 
         dev = dev.append({
@@ -113,13 +117,61 @@ def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
 
     return dev
 
-def propagate(rf, resources, ledgers):
+def propagateN(data, rf, resources, ledgers):
+    rs = deepcopy(resources)
+    ls = deepcopy(ledgers)
+    payoffs = {peer: 0 for peer in ledgers.keys()}
+
+    if isinstance(data, list):
+        amts_to_send = data
+    else:
+        amts_to_send = [data] * len(resources)
+
+    while not all(s == 0 for s in amts_to_send):
+        # store lowest value to know how much data each peer will sent in `propagate`
+        sent = min(rs)
+        # have all peers send data until one or more reaches 0
+        rs, ls, allocations = propagate(rf, rs, ls, amts_to_send)
+        # store remaining amount of data for each peer to send
+        amts_to_send = [max(0, s - sent) for s in amts_to_send]
+        # reset all peers who have 0 remaining resource
+        for peer, rem in enumerate(rs):
+            if rem == 0:
+                rs[peer] = resources[peer]
+        # calculate payoff each peer received for this round, add to total
+        ps = totalAllocationToPeers(rf, rs, ls)
+        for peer in payoffs.keys():
+            payoffs[peer] += ps[peer]
+
+    # TODO: need to return rs? not sure anything will use it
+    return payoffs, rs, ls, allocations
+
+def propagate(rf, resources, ledgers, amts_to_send=None):
     allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
-    new_ledgers = updateLedgers(ledgers, allocations)
-    return allocations, new_ledgers
+    # if incremental:
+    if amts_to_send is None:
+        amts_to_send = [None] * len(resources)
+    new_ledgers, new_resources = updateLedgers(ledgers, allocations, resources, amts_to_send)
+    return new_resources, new_ledgers, allocations
+    # return allocations, new_ledgers, new_resources
+    # else:
+        # new_ledgers = updateLedgers(ledgers, allocations)
+        # return allocations, new_ledgers
 
 # Allocation calculation functions
 # --------------------------------
+
+def totalAllocationToPeers(rf, resources, ledgers):
+    #TODO: I wrote this while tired, check
+    totals = {}
+    for peer in ledgers.keys():
+        totals[peer] = 0
+        for i, resource in enumerate(resources):
+            if i == peer:
+                continue
+            allocation = calculateAllocations(rf, resource, ledgers[i])
+            totals[peer] += allocation[peer]
+    return totals
 
 def totalAllocationToPeer(rf, resources, ledgers, peer):
     # input
@@ -134,9 +186,7 @@ def totalAllocationToPeer(rf, resources, ledgers, peer):
         if i == peer:
             continue
         allocation = calculateAllocations(rf, resource, ledgers[i])
-
         total += allocation[peer]
-
     return total
 
 # calculate how a peer with `resource` allocations to its peers given their
@@ -176,7 +226,12 @@ def initialLedgers(rep_type, resources, c=0):
             resource = resources[i]
             weights = {j: resource_j for j, resource_j in enumerate(resources) if j != i}
             reputations[i] = calculateAllocationsFromWeights(resource, weights)
-            initial_ledgers = updateLedgers(ledgers, reputations)
+
+            initial_ledgers = deepcopy(ledgers)
+            for sender in reputations.keys():
+                for receiver, allocation in reputations[sender].items():
+                    initial_ledgers[sender][receiver].sent_to   += allocation
+                    initial_ledgers[receiver][sender].recv_from += allocation
         return initial_ledgers
 
     # TODO: return error?
