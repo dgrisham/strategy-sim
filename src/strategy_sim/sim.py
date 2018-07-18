@@ -5,7 +5,9 @@ import sys
 import pandas as pd
 import numpy as np
 
+from math import ceil
 from copy import deepcopy
+from operator import itemgetter
 from collections import defaultdict
 
 import matplotlib as mpl
@@ -58,18 +60,27 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
 
     return results
 
+def runNew(data, dpr, rf, upload_rates, initial_ledgers, outfile, plot_results=False, save_results=False):
+    ledgers, send_history = propagateN(data, dpr, rf, upload_rates, initial_ledgers)
+    # if plot_results:
+    #     plotNew(outfile, non_dev, dev)
+    if save_results:
+        send_history.to_csv('results-new/{}.csv'.format(outfile))
+
+
 # run non_deviating case
-def runNormal(rf, resources, rounds, initial_ledgers):
-    if rounds < 1:
-        print(f"Rounds should be greater than 1, is {rounds}")
-        return None
+def runNormal(data, dpr, rf, upload_rates, initial_ledgers):
+    # if rounds < 1:
+    #     print(f"Rounds should be greater than or equal to 1, is {rounds}")
+    #     return None
     # peer that we want to calculate the payoff of
-    peer = 0
+    # peer = 0
     # peer allocations in non-deviating case
-    ledgers = deepcopy(initial_ledgers)
+    # ledgers = deepcopy(initial_ledgers)
     # play out the rest of the rounds, sum user 0's total payoff
-    payoff = 0
-    payoffs, _, ledgers, allocations = propagateN(rounds, rf, resources, ledgers)
+    # payoff = 0
+
+    # payoffs, _, ledgers, allocations = propagateN(rounds, rf, resources, ledgers)
     # for _ in range(rounds):
         # _, ledgers, allocations = propagate(rf, resources, ledgers) # TODO: FIX
         # payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
@@ -78,16 +89,15 @@ def runNormal(rf, resources, rounds, initial_ledgers):
     # TODO: should I be exporting allocations, or ledgers and/or debt ratios? I think they're
     # 1-round separate in time, so be careful with this decision (might be a good reason that
     # I originally chose to do it the way I did)
-    non_dev = pd.DataFrame.from_dict({
-        'b01': [allocations[0][1]],
-        'b02': [allocations[0][2]],
-        'payoff': [payoff]
-    })
-
-    return non_dev
+    # non_dev = pd.DataFrame.from_dict({
+    #     'b01': [allocations[0][1]],
+    #     'b02': [allocations[0][2]],
+    #     'payoff': [payoff]
+    # })
+    return propagateN(data, dpr, rf, upload_rates, ledgers)
 
 # run all deviating cases
-def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
+def runDeviate(data, dpr, rf, upload_rates, initial_ledgers, dev_step, non_dev_amt):
     # peer that we'll test as the deviating peer
     peer = 0
     # get other peer's allocations
@@ -117,41 +127,60 @@ def runDeviate(rf, resources, rounds, initial_ledgers, dev_step, non_dev_amt):
 
     return dev
 
-def propagateN(data, rf, resources, ledgers):
-    rs = deepcopy(resources)
-    ls = deepcopy(ledgers)
+def propagateN(data, data_per_round, rf, upload_rates, ledgers):
     payoffs = {peer: 0 for peer in ledgers.keys()}
+    data_rem = [data] * len(upload_rates)
 
-    if isinstance(data, list):
-        amts_to_send = data
-    else:
-        amts_to_send = [data] * len(resources)
+    # t_tot is the total number of iterations it will take for all peers to finish
+    t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates))
+    send_history = pd.DataFrame(index=pd.MultiIndex.from_product([range(t_tot), ledgers.keys()]), columns=ledgers.keys())
+    allocations = {i: calculateAllocations(rf, data_per_round, ledgers[i]) for i in ledgers.keys()}
+    t = 0
+    while t < t_tot:
+        for sender, upload in enumerate(upload_rates):
+            if all(alloc == 0 for alloc in allocations[sender].values()):
+                allocations[sender] = calculateAllocations(rf, data_per_round, ledgers[sender])
+        for sender, upload in enumerate(upload_rates):
+            for receiver, allocation in allocations[sender].items():
+                # get amount to send to receiver in this round
+                send = min([allocation, upload, data_rem[sender]])
+                ledgers = updateLedgers(ledgers, sender, receiver, send)
+                allocations[sender][receiver] -= send
+                data_rem[sender] -= send
+                upload -= send
+                send_history.loc[t, sender][receiver] = send
+                # if the allocation didn't hit zero, we ran out of upload or data. break
+                if allocations[sender][receiver] > 0:
+                    break
+        t += 1
 
-    while not all(s == 0 for s in amts_to_send):
-        # store lowest value to know how much data each peer will sent in `propagate`
-        sent = min(rs)
-        # have all peers send data until one or more reaches 0
-        rs, ls, allocations = propagate(rf, rs, ls, amts_to_send)
-        # store remaining amount of data for each peer to send
-        amts_to_send = [max(0, s - sent) for s in amts_to_send]
-        # reset all peers who have 0 remaining resource
-        for peer, rem in enumerate(rs):
-            if rem == 0:
-                rs[peer] = resources[peer]
+        # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
+        # ls, allocations = propagate(rf, ls, data_rem, next_reset)
+        # data_rem = [min(0, d - next_reset) for d in data_rem]
+        # reset all peers who have 0 rem resource
+        # for peer, rem in enumerate(round_rem):
+            # if rem = 0:
+                # round_rem[peer] = data_per_round
+                # allocations[i] = calculateAllocations(rf, data_per_round # TODODODOTODOTODO
         # calculate payoff each peer received for this round, add to total
-        ps = totalAllocationToPeers(rf, rs, ls)
-        for peer in payoffs.keys():
-            payoffs[peer] += ps[peer]
+        # ps = totalAllocationToPeers(rf, rs, ls)
+        # for peer in payoffs.keys():
+            # payoffs[peer] += ps[peer]
 
     # TODO: need to return rs? not sure anything will use it
-    return payoffs, rs, ls, allocations
+    # return payoffs, rs, ls, allocations
+    return ledgers, send_history
 
-def propagate(rf, resources, ledgers, amts_to_send=None):
+# def propagate(rf, ledgers, data_limits, next_reset):
+    # allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
+    # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
+    # return new_ledgers, allocations
+
+# TODO: this hasn't been updated to work with the new updateLedgers, but may need to be deleted anyway
+def propagateOld(rf, resources, ledgers):
     allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
     # if incremental:
-    if amts_to_send is None:
-        amts_to_send = [None] * len(resources)
-    new_ledgers, new_resources = updateLedgers(ledgers, allocations, resources, amts_to_send)
+    new_ledgers, new_resources = updateLedgers(ledgers, allocations, resources)
     return new_resources, new_ledgers, allocations
     # return allocations, new_ledgers, new_resources
     # else:

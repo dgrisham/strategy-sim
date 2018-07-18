@@ -10,7 +10,7 @@ from copy import deepcopy
 from itertools import product
 
 # local imports
-from sim import run, runRange, initialLedgers
+from sim import run, runNew, runRange, initialLedgers
 
 # Main
 # ----
@@ -78,21 +78,49 @@ def main(argv):
         '--output',
         default='',
     )
+    cli.add_argument(
+        '--run-strategy',
+        action='store_false',
+        default=True,
+    )
+    cli.add_argument(
+        '--data',
+        type=int,
+    )
+    cli.add_argument(
+        '--data-per-round',
+        type=int,
+    )
+    cli.add_argument(
+        '-u',
+        '--upload-rates',
+        nargs="*",
+        action='append',
+        type=int,
+    )
     if len(argv) == 0:
         cli.print_usage()
         sys.exit()
     args = cli.parse_args(argv)
 
-    for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
-        outfile = args.output
-        if not outfile:
-            outfile = '{f}-{rep}-{rounds}-{res}-{step}'.format(f=function, rep=rep, rounds=args.rounds, res='_'.join(str(r) for r in resources), step=args.dev_step)
-        ledgers = initialLedgers(rep, resources)
-        if args.range:
-            peer, amt = args.range
-            runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
-        else:
-            run(resources, rfs[function], args.rounds, ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
+    if args.run_strategy:
+        for function, upload_rates, rep in product(args.reciprocation_function, args.upload_rates, args.initial_reputation):
+            outfile = args.output
+            if not outfile:
+                outfile = '{f}-{rep}-{data}-{dpr}-{ur}'.format(f=function, rep=rep, data=args.data, dpr=args.data_per_round, ur='_'.join(str(r) for r in upload_rates))
+            ledgers = initialLedgers(rep, upload_rates)
+            runNew(args.data, args.data_per_round, rfs[function], upload_rates, ledgers, outfile, not args.no_plot, not args.no_save)
+
+    # for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
+    #     outfile = args.output
+    #     if not outfile:
+    #         outfile = '{f}-{rep}-{rounds}-{res}-{step}'.format(f=function, rep=rep, rounds=args.rounds, res='_'.join(str(r) for r in resources), step=args.dev_step)
+    #     ledgers = initialLedgers(rep, resources)
+    #     if args.range:
+    #         peer, amt = args.range
+    #         runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
+    #     else:
+    #         run(resources, rfs[function], args.rounds, ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
 
 if __name__ == '__main__':
     main(sys.argv[1:])

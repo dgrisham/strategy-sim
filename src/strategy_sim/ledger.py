@@ -3,6 +3,8 @@
 
 from copy import deepcopy
 
+import numpy as np
+
 class Ledger:
     def __init__(self, recv_from, sent_to):
         self.recv_from = recv_from
@@ -20,8 +22,28 @@ class Ledger:
 def debtRatio(ledger):
     return ledger.recv_from / ledger.sent_to
 
+def updateLedgersAH(ledgers, allocations, data_limits, next_reset):
+    new_ledgers = deepcopy(ledgers)
+    for sender in allocations.keys():
+        remaining = min(next_reset, data_limits[sender])
+        for receiver, allocation in allocations[sender].items():
+            sent = min(allocation, remaining)
+            new_ledgers[sender][receiver].sent_to   += sent
+            new_ledgers[receiver][sender].recv_from += sent
+            remaining -= sent
+            # this line moves the receiver to the end of the sender's queue (since python dicts are ordered in 3.7+,
+            # and the orders of the `allocations` dictionaries are determined by the ledger ordering).
+            # this might be better achieved by maintaing a queue order (rather than reordering the ledgers, which
+            # seems semantically weird). Ledgers are small though, so this is hopefully not too bad on performance.
+            # TODO: Also need to figure out whether insertion order affects dict comparison in python 3.7+. seems
+            # like it really shouldn't, but need to confirm.
+            new_ledgers[sender][receiver] = new_ledgers[sender].pop(receiver)
+            if remaining == 0:
+                break
+    return new_ledgers
+
 # update ledger values based on a round of allocations, up until the peer with the lowest resource finishes sending
-def updateLedgers(ledgers, allocations, resources_cur, amts_to_send):
+def updateLedgersProbablyUseless(ledgers, allocations, resources_cur, amts_to_send):
     new_ledgers = deepcopy(ledgers)
     resource_min = min(resources_cur)
     for sender in allocations.keys():
@@ -44,13 +66,19 @@ def updateLedgers(ledgers, allocations, resources_cur, amts_to_send):
     return new_ledgers, [r - resource_min for r in resources_cur]
 
 # update ledger values based on a round of allocations
-# def updateLedgersOld(ledgers, allocations):
-    # new_ledgers = deepcopy(ledgers)
-    # for sender in allocations.keys():
-        # for receiver, allocation in allocations[sender].items():
-            # new_ledgers[sender][receiver].sent_to   += allocation
-            # new_ledgers[receiver][sender].recv_from += allocation
-    # return new_ledgers
+def updateLedgersOld(ledgers, allocations):
+    new_ledgers = deepcopy(ledgers)
+    for sender in allocations.keys():
+        for receiver, allocation in allocations[sender].items():
+            new_ledgers[sender][receiver].sent_to   += allocation
+            new_ledgers[receiver][sender].recv_from += allocation
+    return new_ledgers
+
+def updateLedgers(ledgers, sender, receiver, sent):
+    new_ledgers = deepcopy(ledgers)
+    new_ledgers[sender][receiver].sent_to   += np.round(sent, 3)
+    new_ledgers[receiver][sender].recv_from += np.round(sent, 3)
+    return new_ledgers
 
 def addLedgerPair(ledgers, i, j, bij, bji):
     new_ledgers = deepcopy(ledgers)

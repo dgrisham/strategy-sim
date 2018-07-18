@@ -2,89 +2,80 @@
 #-*- coding: utf-8 -*-
 
 import pytest
-from sim import propagate, propagateN, initialLedgers
+import random as rand
+
+import sys
+sys.path.append('src/strategy_sim')
+
+from sim import propagateN, initialLedgers
 from ledger import Ledger
 
 __author__ = "David Grisham"
 __initializeright__ = "David Grisham"
 __license__ = "mit"
 
-@pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_homogeneous(c):
-    ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [10, 10, 10]
-    actual_resources, actual_ledgers, _ = propagate(lambda x: x, resources, ledgers)
-    expected_resources = [0, 0, 0]
-    expected_ledgers = {
-        0: {1: Ledger(c+5, c+5), 2: Ledger(c+5, c+5)},
-        1: {0: Ledger(c+5, c+5), 2: Ledger(c+5, c+5)},
-        2: {0: Ledger(c+5, c+5), 1: Ledger(c+5, c+5)},
-    }
-    assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
+# TODO: test calculateAllocations
 
 @pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_heterogeneous1(c):
+@pytest.mark.parametrize("n", range(1, 6))
+@pytest.mark.parametrize("dpr", [1, 10])
+def test_updateLedgersIncremental_multipleRounds_homogeneous_1(c, n, dpr):
     ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [10, 20, 30]
-    actual_resources, actual_ledgers, _ = propagate(lambda x: x, resources, ledgers)
-    expected_resources = [0, 10, 20]
+    upload_rates = [10, 10, 10]
+    actual_ledgers, _ = propagateN(10*n, 10*n/dpr, lambda x: x, upload_rates, ledgers)
     expected_ledgers = {
-        0: {1: Ledger(c+10, c+5), 2: Ledger(c+10, c+5)},
-        1: {0: Ledger(c+5, c+10), 2: Ledger(c, c)},
-        2: {0: Ledger(c+5, c+10), 1: Ledger(c, c)},
+        0: {1: Ledger(c+5*n, c+5*n), 2: Ledger(c+5*n, c+5*n)},
+        1: {0: Ledger(c+5*n, c+5*n), 2: Ledger(c+5*n, c+5*n)},
+        2: {0: Ledger(c+5*n, c+5*n), 1: Ledger(c+5*n, c+5*n)},
     }
-    assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
+    assert actual_ledgers == expected_ledgers, "actual ledgers do not match expected"
 
 @pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_heterogeneous2(c):
+@pytest.mark.parametrize("n", range(1, 6))
+def test_updateLedgersIncremental_multipleRounds_homogeneous_2(c, n):
     ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [10, 8, 6]
-    actual_resources, actual_ledgers, _ = propagate(lambda x: x, resources, ledgers)
-    expected_resources = [4, 2, 0]
+    upload_rates = [10, 10, 10]
+    actual_ledgers, _ = propagateN(10*n, 1, lambda x: x, upload_rates, ledgers)
     expected_ledgers = {
-        0: {1: Ledger(c+4, c+5), 2: Ledger(c+3, c+1)},
-        1: {0: Ledger(c+5, c+4), 2: Ledger(c+3, c+2)},
-        2: {0: Ledger(c+1, c+3), 1: Ledger(c+2, c+3)},
+        0: {1: Ledger(c+5*n, c+5*n), 2: Ledger(c+5*n, c+5*n)},
+        1: {0: Ledger(c+5*n, c+5*n), 2: Ledger(c+5*n, c+5*n)},
+        2: {0: Ledger(c+5*n, c+5*n), 1: Ledger(c+5*n, c+5*n)},
     }
-    assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
+    assert actual_ledgers == expected_ledgers, "actual ledgers do not match expected"
 
+rand.seed(5)
 @pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_zero(c):
+@pytest.mark.parametrize("n", range(1, 3))
+@pytest.mark.parametrize("u", (rand.randint(1, 1000) for _ in range(20)))
+def test_updateLedgersIncremental_multipleRounds_homogeneous_3(c, n, u):
     ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [0, 0, 0]
-    actual_resources, actual_ledgers, _ = propagate(lambda x: x, resources, ledgers)
-    expected_resources = [0, 0, 0]
-    expected_ledgers = ledgers
-    assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
-
-@pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_multipleRounds_homogeneous(c):
-    ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [10, 10, 10]
-    _, actual_resources, actual_ledgers, _ = propagateN(20, lambda x: x, resources, ledgers)
-    expected_resources = [10, 10, 10]
+    upload_rates = [u] * 3
+    actual_ledgers, _ = propagateN(1000*n, 1000, lambda x: x, upload_rates, ledgers)
     expected_ledgers = {
-        0: {1: Ledger(c+10, c+10), 2: Ledger(c+10, c+10)},
-        1: {0: Ledger(c+10, c+10), 2: Ledger(c+10, c+10)},
-        2: {0: Ledger(c+10, c+10), 1: Ledger(c+10, c+10)},
+        0: {1: Ledger(c+n*500, c+n*500), 2: Ledger(c+n*500, c+n*500)},
+        1: {0: Ledger(c+n*500, c+n*500), 2: Ledger(c+n*500, c+n*500)},
+        2: {0: Ledger(c+n*500, c+n*500), 1: Ledger(c+n*500, c+n*500)},
     }
-    assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
+    assert actual_ledgers == expected_ledgers, "actual ledgers do not match expected"
 
-@pytest.mark.parametrize("c", range(1, 4))
-def test_updateLedgersIncremental_multipleRounds_heterogeneous(c):
-    ledgers = initialLedgers('constant', [0]*3, c=c)
-    resources = [10, 20, 30]
-    _, actual_resources, actual_ledgers, _ = propagateN(20, lambda x: x, resources, ledgers)
-    expected_resources = [10, 20, 10]
+def test_updateLedgersIncremental_multipleRounds_heterogeneous_1():
+    ledgers = initialLedgers('constant', [0]*3, c=1)
+    upload_rates = [10, 20, 30]
+    actual_ledgers, _ = propagateN(20, 20, lambda x: x, upload_rates, ledgers)
     expected_ledgers = {
-        0: {1: Ledger(c+10, c+10), 2: Ledger(c+15, c+10)},
-        1: {0: Ledger(c+10, c+10), 2: Ledger(c+5, c+10)},
-        2: {0: Ledger(c+10, c+15), 1: Ledger(c+10, c+5)},
+        0: {1: Ledger(11, 11), 2: Ledger(11, 11)},
+        1: {0: Ledger(11, 11), 2: Ledger(11, 11)},
+        2: {0: Ledger(11, 11), 1: Ledger(11, 11)},
     }
-    # assert actual_ledgers   == expected_ledgers, "actual ledgers do not match expected. actual: {actual_ledgers}"
-    assert actual_resources == expected_resources, "actual resources do not match expected"
+    assert actual_ledgers == expected_ledgers, "actual ledgers do not match expected"
+
+def test_updateLedgersIncremental_multipleRounds_heterogeneous_2():
+    ledgers = initialLedgers('constant', [0]*3, c=1)
+    upload_rates = [10, 20, 30]
+    actual_ledgers, _ = propagateN(30, 20, lambda x: x, upload_rates, ledgers)
+    expected_ledgers = {
+        0: {1: Ledger(21.000, 21.000), 2: Ledger(12.667, 11.000)},
+        1: {0: Ledger(21.000, 21.000), 2: Ledger(19.333, 11.000)},
+        2: {0: Ledger(11.000, 12.667), 1: Ledger(11.000, 19.333)},
+    }
+    assert actual_ledgers == expected_ledgers, "actual ledgers do not match expected"
