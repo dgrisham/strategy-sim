@@ -86,10 +86,12 @@ def main(argv):
     cli.add_argument(
         '--data',
         type=int,
+        action='append',
     )
     cli.add_argument(
         '--data-per-round',
         type=int,
+        action='append',
     )
     cli.add_argument(
         '-u',
@@ -104,12 +106,13 @@ def main(argv):
     args = cli.parse_args(argv)
 
     if args.run_strategy:
-        for function, upload_rates, rep in product(args.reciprocation_function, args.upload_rates, args.initial_reputation):
+        for function, upload_rates, rep, data, dpr in product(args.reciprocation_function, args.upload_rates, args.initial_reputation, args.data, args.data_per_round):
             outfile = args.output
             if not outfile:
-                outfile = '{f}-{rep}-{data}-{dpr}-{ur}'.format(f=function, rep=rep, data=args.data, dpr=args.data_per_round, ur='_'.join(str(r) for r in upload_rates))
+                outfile = f'{function}-{rep}-{data}-{dpr}-{"_".join(str(r) for r in upload_rates)}'
+                # outfile = '{f}-{rep}-{data}-{dpr}-{ur}'.format(f=function, rep=rep, data=data, dpr=dpr, ur='_'.join(str(r) for r in upload_rates))
             ledgers = initialLedgers(rep, upload_rates)
-            runNew(args.data, args.data_per_round, rfs[function], upload_rates, ledgers, outfile, not args.no_plot, not args.no_save)
+            runNew(data, dpr, rfs[function], upload_rates, ledgers, outfile, not args.no_plot, not args.no_save)
 
     # for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
     #     outfile = args.output

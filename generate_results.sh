@@ -2,8 +2,12 @@
 
 cd src/strategy_sim
 
-for i in 1 2 100; do
-    ./app.py -f sigmoid -f linear -f tanh -r 10 10 10 -r 10 20 10 -r 10 20 20\
-             -r 20 10 10 -r 20 10 20 -r 30 10 30 -r 30 10 20 -i split -i ones\
-             -i proportional --dev-step 0.1 --no-plot --rounds $i
-done
+./app.py -f linear -f sigmoid -f tanh -u 1 10 100 -i ones --data 100000 --data-per-round 1
+./app.py -f linear -f sigmoid -f tanh -u 1 10 100 -i ones --data 100000 --data-per-round 10
+./app.py -f linear -f sigmoid -f tanh -u 1 10 100 -i ones --data 100000 --data-per-round 100
+./app.py -f linear -f sigmoid -f tanh -u 10 100 1000 -i ones --data 1000000 --data-per-round 10
+./app.py -f linear -f sigmoid -f tanh -u 10 100 1000 -i ones --data 1000000 --data-per-round 100
+./app.py -f linear -f sigmoid -f tanh -u 10 100 1000 -i ones --data 1000000 --data-per-round 1000
+
+./app.py -f linear -f sigmoid -f tanh -u 10 100 10000 -i ones --data 1000000 --data-per-round 100
+./app.py -f linear -f sigmoid -f tanh -u 10 100 10000 -i ones --data 1000000 --data-per-round 1000

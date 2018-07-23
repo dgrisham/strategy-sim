@@ -62,7 +62,7 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
     return results
 
 def runNew(data, dpr, rf, upload_rates, initial_ledgers, outfile, plot_results=False, save_results=False):
-    history = propagateN(data, dpr, rf, upload_rates, initial_ledgers)
+    _, history = propagateN(data, dpr, rf, upload_rates, initial_ledgers)
     # if plot_results:
     #     plotNew(outfile, non_dev, dev)
     if save_results:
@@ -134,11 +134,18 @@ def propagateN(data, data_per_round, rf, upload_rates, ledgers):
     data_rem = [data] * len(upload_rates)
 
     # t_tot is the total number of iterations it will take for all peers to finish
-    t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates))
-    history = pd.DataFrame(index=pd.MultiIndex.from_tuples([(i, x, y) for i, (x, y) in product(range(t_tot), product(ledgers.keys(), repeat=2)) if x != y], names=['t', 'i', 'j']), columns=['send', 'debt_ratio'])
+    t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates)) + 1
+    history = pd.DataFrame(index=pd.MultiIndex.from_tuples(
+        [(i, x, y) for i, (x, y) in product(range(t_tot), product(ledgers.keys(), repeat=2)) if x != y],
+        names=['t', 'i', 'j']), columns=['send', 'debt_ratio'])
+
+    for i, ledgers_i in ledgers.items():
+        for j in ledgers_i.keys():
+            history.loc[0, i, j]['send'] = 0
+            history.loc[0, i, j]['debt_ratio'] = debtRatio(ledgers[i][j])
 
     allocations = {i: calculateAllocations(rf, data_per_round, ledgers[i]) for i in ledgers.keys()}
-    t = 0
+    t = 1
     while t < t_tot:
         for sender, upload in enumerate(upload_rates):
             if all(alloc == 0 for alloc in allocations[sender].values()):
@@ -173,7 +180,7 @@ def propagateN(data, data_per_round, rf, upload_rates, ledgers):
 
     # TODO: need to return rs? not sure anything will use it
     # return payoffs, rs, ls, allocations
-    return history
+    return ledgers, history
 
 # def propagate(rf, ledgers, data_limits, next_reset):
     # allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
@@ -289,8 +296,9 @@ def plotNew(outfile, history):
     fig, ax = plt.subplots()
     for (i, j), hij in history.groupby(level=[1, 2]):
         hij.index = hij.index.droplevel([1, 2])
-        hij.plot(y='debt_ratio')
+        hij.plot(y='debt_ratio', ax=ax, label=f"({i}, {j})")
     plt.title(outfile)
+    plt.ylim(ymin=0)
 
     fig.tight_layout()
     plt.savefig("plots-new/{}.pdf".format(outfile))
