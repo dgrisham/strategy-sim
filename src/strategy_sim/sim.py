@@ -12,8 +12,9 @@ from operator import itemgetter
 from collections import defaultdict
 
 import matplotlib as mpl
-mpl.use('Agg')
+# mpl.use('Agg')
 import matplotlib.pyplot as plt
+plt.style.use('ggplot')
 #from mpl_toolkits.mplot3d import Axes3D
 
 # local imports
@@ -24,12 +25,12 @@ __copyright__ = "David Grisham"
 __license__ = "mit"
 
 # Run the standard simulation -- test all of peer 0's allocation strategies
-def run(resources, rf, rounds, ledgers, dev_step, outfile, plot_results=False, save_results=False):
+def run(resources, rf, rounds, ledgers, dev_step, outfile, save_plot=False, save_results=False):
     non_dev = runNormal(rf, resources, rounds, ledgers)
     dev = runDeviate(rf, resources, rounds, ledgers, dev_step, non_dev.iloc[0]['b01'])
     non_dev['xs'], dev['xs'] = get2DSlice(resources[0], non_dev, dev)
 
-    if plot_results:
+    if save_plot:
         plot(outfile, non_dev, dev)
     if save_results:
         pd.concat([non_dev, dev]).reset_index(drop=True).to_csv('results/{}.csv'.format(outfile), index=False)
@@ -38,10 +39,10 @@ def run(resources, rf, rounds, ledgers, dev_step, outfile, plot_results=False, s
 
 # Run the range simulation -- vary peer 1's resource and measure peer 0's optimal
 # deviation in each case
-def runRange(rf, resources, ledgers, peer, amt, range_step, dev_step, outfile_base, plot_results):
+def runRange(rf, resources, ledgers, peer, amt, range_step, dev_step, outfile_base, save_plot):
     outfile = '{}-range_{}_{}'.format(outfile_base, peer, amt)
     results = rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step)
-    if plot_results:
+    if save_plot:
         plotRangeEval(results, outfile)
 
 def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
@@ -61,14 +62,14 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
 
     return results
 
-def runNew(data, dpr, rf, upload_rates, initial_ledgers, outfile, plot_results=False, save_results=False):
-    _, history = propagateN(data, dpr, rf, upload_rates, initial_ledgers)
-    # if plot_results:
-    #     plotNew(outfile, non_dev, dev)
+def runNew(data, dpr, rf, upload_rates, initial_ledgers, mode, outfile, save_results, save_plot, show_plot):
+    _, history = propagateN(data, dpr, rf, upload_rates, initial_ledgers, mode)
+    if history is None:
+        return
     if save_results:
         history.to_csv('results-new/{}.csv'.format(outfile))
-    if plot_results:
-        plotNew(outfile, history)
+    if save_plot or show_plot:
+        plotNew(history, save_plot, show_plot, outfile)
 
 # run non_deviating case
 def runNormal(data, dpr, rf, upload_rates, initial_ledgers):
@@ -129,28 +130,48 @@ def runDeviate(data, dpr, rf, upload_rates, initial_ledgers, dev_step, non_dev_a
 
     return dev
 
-def propagateN(data, data_per_round, rf, upload_rates, ledgers):
+def propagateN(data, data_per_round, rf, upload_rates, ledgers, mode='send_limit-stagger'):
+    if mode in 'send_limit-stagger':
+        return propagateNSendStag(data, data_per_round, rf, upload_rates, ledgers)
+    elif mode in 'send_limit-continuous':
+        return propagateNSendCont(data, data_per_round, rf, upload_rates, ledgers)
+    elif mode in 'receive_limit':
+        return propagateNRecvStag(data, data_per_round, rf, upload_rates, ledgers)
+
+    print(f"unsupported mode: {mode}")
+    return None, None
+
+def propagateNSendStag(data, data_per_round, rf, upload_rates, ledgers):
     payoffs = {peer: 0 for peer in ledgers.keys()}
     data_rem = [data] * len(upload_rates)
 
     # t_tot is the total number of iterations it will take for all peers to finish
-    t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates)) + 1
+    if type(data_per_round) is list:
+        t_tot = max(ceil(data / dpr) * ceil(dpr / urate) for dpr, urate in zip(data_per_round, upload_rates)) + 1
+    else:
+        t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates)) + 1
+
     history = pd.DataFrame(index=pd.MultiIndex.from_tuples(
-        [(i, x, y) for i, (x, y) in product(range(t_tot), product(ledgers.keys(), repeat=2)) if x != y],
+        ((i, x, y) for i, (x, y) in product(range(t_tot+1), product(ledgers.keys(), repeat=2)) if x != y),
         names=['t', 'i', 'j']), columns=['send', 'debt_ratio'])
 
     for i, ledgers_i in ledgers.items():
         for j in ledgers_i.keys():
-            history.loc[0, i, j]['send'] = 0
-            history.loc[0, i, j]['debt_ratio'] = debtRatio(ledgers[i][j])
+            history.loc[0, i, j] = [0, debtRatio(ledgers[i][j])]
 
-    allocations = {i: calculateAllocations(rf, data_per_round, ledgers[i]) for i in ledgers.keys()}
+    allocations = {i : {j: 0 for j in ledgers_i.keys()} for i, ledgers_i in ledgers.items()}
     t = 1
-    while t < t_tot:
-        for sender, upload in enumerate(upload_rates):
-            if all(alloc == 0 for alloc in allocations[sender].values()):
-                allocations[sender] = calculateAllocations(rf, data_per_round, ledgers[sender])
-        for sender, upload in enumerate(upload_rates):
+    # while t < t_tot:
+    while not all(np.isclose(data_rem, 0)):
+        current_peers = [p for p, d in enumerate(data_rem) if not np.isclose(d, 0)]
+        for sender in current_peers:
+            if all(np.isclose(list(allocations[sender].values()), 0)):
+                if type(data_per_round) is list:
+                    allocations[sender] = calculateAllocations(rf, data_per_round[sender], ledgers[sender])
+                else:
+                    allocations[sender] = calculateAllocations(rf, data_per_round, ledgers[sender])
+        for sender in current_peers:
+            upload = upload_rates[sender]
             for receiver, allocation in allocations[sender].items():
                 # get amount to send to receiver in this round
                 send = min([allocation, upload, data_rem[sender]])
@@ -158,51 +179,121 @@ def propagateN(data, data_per_round, rf, upload_rates, ledgers):
                 allocations[sender][receiver] -= send
                 data_rem[sender] -= send
                 upload -= send
-                history.loc[t, sender, receiver]['send'] = send
-                history.loc[t, sender, receiver]['debt_ratio'] = debtRatio(ledgers[sender][receiver])
+                history.loc[t, sender, receiver] = [send, debtRatio(ledgers[sender][receiver])]
                 # if the allocation didn't hit zero, we ran out of upload or data. break
                 if allocations[sender][receiver] > 0:
                     break
         t += 1
 
-        # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
-        # ls, allocations = propagate(rf, ls, data_rem, next_reset)
-        # data_rem = [min(0, d - next_reset) for d in data_rem]
-        # reset all peers who have 0 rem resource
-        # for peer, rem in enumerate(round_rem):
-            # if rem = 0:
-                # round_rem[peer] = data_per_round
-                # allocations[i] = calculateAllocations(rf, data_per_round # TODODODOTODOTODO
-        # calculate payoff each peer received for this round, add to total
-        # ps = totalAllocationToPeers(rf, rs, ls)
-        # for peer in payoffs.keys():
-            # payoffs[peer] += ps[peer]
-
-    # TODO: need to return rs? not sure anything will use it
-    # return payoffs, rs, ls, allocations
     return ledgers, history
 
-# def propagate(rf, ledgers, data_limits, next_reset):
-    # allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
-    # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
-    # return new_ledgers, allocations
+def propagateNSendCont(data, data_per_round, rf, upload_rates, ledgers):
+    payoffs = {peer: 0 for peer in ledgers.keys()}
 
-# TODO: this hasn't been updated to work with the new updateLedgers, but may need to be deleted anyway
-def propagateOld(rf, resources, ledgers):
-    allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
-    # if incremental:
-    new_ledgers, new_resources = updateLedgers(ledgers, allocations, resources)
-    return new_resources, new_ledgers, allocations
-    # return allocations, new_ledgers, new_resources
+    # t_tot is the total number of iterations it will take for all peers to finish
+    if type(data_per_round) is list:
+        t_tot = max(ceil(data / dpr) * ceil(dpr / urate) for dpr, urate in zip(data_per_round, upload_rates)) + 1
+    else:
+        t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates)) + 1
+
+    ### START DIFF ###
+    data_rem = [u * t_tot for u in upload_rates]
+    ### END DIFF ###
+    history = pd.DataFrame(index=pd.MultiIndex.from_tuples(
+        ((i, x, y) for i, (x, y) in product(range(t_tot+1), product(ledgers.keys(), repeat=2)) if x != y),
+        names=['t', 'i', 'j']), columns=['send', 'debt_ratio'])
+
+    for i, ledgers_i in ledgers.items():
+        for j in ledgers_i.keys():
+            history.loc[0, i, j] = [0, debtRatio(ledgers[i][j])]
+
+    allocations = {i : {j: 0 for j in ledgers_i.keys()} for i, ledgers_i in ledgers.items()}
+    t = 1
+    while not all(np.isclose(data_rem, 0)):
+        for sender in ledgers.keys():
+            if all(np.isclose(list(allocations[sender].values()), 0)):
+                if type(data_per_round) is list:
+                    allocations[sender] = calculateAllocations(rf, data_per_round[sender], ledgers[sender])
+                else:
+                    allocations[sender] = calculateAllocations(rf, data_per_round, ledgers[sender])
+        for sender in ledgers.keys():
+            upload = upload_rates[sender]
+            for receiver, allocation in allocations[sender].items():
+                # get amount to send to receiver in this round
+                send = min([allocation, upload, data_rem[sender]])
+                ledgers = updateLedgers(ledgers, sender, receiver, send)
+                allocations[sender][receiver] -= send
+                data_rem[sender] -= send
+                upload -= send
+                history.loc[t, sender, receiver] = [send, debtRatio(ledgers[sender][receiver])]
+                # if the allocation didn't hit zero, we ran out of upload or data. break
+                if allocations[sender][receiver] > 0:
+                    break
+        t += 1
+
+    return ledgers, history
+
+def propagateNRecvStag(data, data_per_round, rf, upload_rates, ledgers):
+    payoffs = {peer: 0 for peer in ledgers.keys()}
+    data_rem = [data] * len(upload_rates)
+
+    ### START DIFF ###
+    # t_tot is the total number of iterations it will take for all peers to finish
+    # if type(data_per_round) is list:
+    #     t_tot = max(ceil(data / dpr) * ceil(dpr / urate) for dpr, urate in zip(data_per_round, upload_rates)) + 1
     # else:
-        # new_ledgers = updateLedgers(ledgers, allocations)
-        # return allocations, new_ledgers
+    #     t_tot = ceil(data / data_per_round) * ceil(data_per_round / min(upload_rates)) + 1
+    ### END DIFF ###
+
+    history = pd.DataFrame(index=pd.MultiIndex.from_tuples(
+        ((0, x, y) for (x, y) in product(ledgers.keys(), repeat=2) if x != y),
+        names=['t', 'i', 'j']), columns=['send', 'debt_ratio'])
+
+    for i, ledgers_i in ledgers.items():
+        for j in ledgers_i.keys():
+            history.loc[0, i, j] = [0, debtRatio(ledgers[i][j])]
+
+    allocations = {i : {j: 0 for j in ledgers_i.keys()} for i, ledgers_i in ledgers.items()}
+    t = 1
+    while not all(np.isclose(data_rem, 0)):
+        for sender in ledgers.keys():
+            ### START DIFF ###
+            for receiver in ledgers[sender].keys():
+                if np.isclose(data_rem[receiver], 0):
+                    del ledgers[sender][receiver]
+            ### END DIFF ###
+            if all(np.isclose(list(allocations[sender].values()), 0)):
+                if type(data_per_round) is list:
+                    allocations[sender] = calculateAllocations(rf, data_per_round[sender], ledgers[sender])
+                else:
+                    allocations[sender] = calculateAllocations(rf, data_per_round, ledgers[sender])
+        for sender in ledgers.keys():
+            upload = upload_rates[sender]
+            for receiver, allocation in allocations[sender].items():
+                # get amount to send to receiver in this round
+                send = min([allocation, upload, data_rem[receiver]])
+                ledgers = updateLedgers(ledgers, sender, receiver, send)
+                allocations[sender][receiver] -= send
+                ### START DIFF ###
+                data_rem[receiver] -= send
+                ### END DIFF ###
+                upload -= send
+                history.loc[t, sender, receiver] = [send, debtRatio(ledgers[sender][receiver])]
+                # if the allocation didn't hit zero, we ran out of upload or data. break
+                if allocations[sender][receiver] > 0:
+                    break
+        t += 1
+
+    return ledgers, history
+
+def propagateNRecvCont(data, data_per_round, rf, upload_rates, ledgers):
+    # TODO: decide whether this one is useful
+    pass
 
 # Allocation calculation functions
 # --------------------------------
 
 def totalAllocationToPeers(rf, resources, ledgers):
-    #TODO: I wrote this while tired, check
     totals = {}
     for peer in ledgers.keys():
         totals[peer] = 0
@@ -241,6 +332,9 @@ def calculateAllocationsFromWeights(resource, weights):
 
 # ledger initialization options
 def initialLedgers(rep_type, resources, c=0):
+    if rep_type == 'none':
+        return defaultdict(lambda: {})
+
     if rep_type == 'constant':
         return defaultdict(lambda: {},
             {i: {j: Ledger(c, c) for j in range(len(resources)) if j != i}
@@ -274,8 +368,8 @@ def initialLedgers(rep_type, resources, c=0):
                     initial_ledgers[receiver][sender].recv_from += allocation
         return initial_ledgers
 
-    # TODO: return error?
-    return defaultdict(lambda: {})
+    print(f"unsupported reputation type: {rep_type}")
+    return None
 
 # Plotting
 # --------
@@ -292,16 +386,63 @@ def get2DSlice(B, non_dev, dev):
 
     return non_dev_xs, dev_xs
 
-def plotNew(outfile, history):
-    fig, ax = plt.subplots()
+def plotNew(history, save, show, outfile=''):
+    dr_min = history['debt_ratio'].min()
+    dr_max = history['debt_ratio'].max()
+    dr_mean = history['debt_ratio'].mean()
+    fig, axes = plt.subplots(3)
+    figLog, axesLog = plt.subplots(3)
+
+    axes[0].set_prop_cycle('color', ['black', 'magenta'])
+    axes[1].set_prop_cycle('color', ['blue', 'red'])
+    axes[2].set_prop_cycle('color', ['orange', 'green'])
+
+    axesLog[0].set_prop_cycle('color', ['black', 'magenta'])
+    axesLog[1].set_prop_cycle('color', ['blue', 'red'])
+    axesLog[2].set_prop_cycle('color', ['orange', 'green'])
+
     for (i, j), hij in history.groupby(level=[1, 2]):
         hij.index = hij.index.droplevel([1, 2])
-        hij.plot(y='debt_ratio', ax=ax, label=f"({i}, {j})")
-    plt.title(outfile)
-    plt.ylim(ymin=0)
+        factor = 0.25
+        hij.plot(y='debt_ratio', xlim=(0, hij.index.get_level_values(0).max()), ylim=(dr_min - factor * dr_mean, dr_max + factor * dr_mean), ax=axes[i], label=f"Debt ratio of {j} wrt {i}")
+        hij.plot(y='debt_ratio', xlim=(0, hij.index.get_level_values(0).max()), ylim=(dr_min * 0.5, dr_max * 1.5), logy=True, ax=axesLog[i], label=f"Debt ratio of {j} wrt {i}")
+
+        legendFont = 'large'
+        axes[i].legend(prop={'size': legendFont})
+        axesLog[i].legend(prop={'size': legendFont})
+
+        title = f"User {i}'s Debt Ratios"
+        axes[i].set_title(title)
+        axesLog[i].set_title(f"{title} (Semi-Log)")
+
+        ylabel = "Debt Ratio"
+        axes[i].set_ylabel(ylabel)
+        axesLog[i].set_ylabel(f"log({ylabel})")
+
+    pts = outfile.split('-')
+    title = f"RF: {pts[0].title()}, IR: {pts[1].title()}, Data: {pts[2]}, DPR: [{pts[3].replace('_', ', ')}], UR: [{pts[4].replace('_', ', ')}], {pts[5].replace('_', ' ').title()} ({pts[6].title()})"
+
+    fig.suptitle(title)
+    axes[0].set_xlabel('')
+    axes[1].set_xlabel('')
+
+    figLog.suptitle(title)
+    axesLog[0].set_xlabel('')
+    axesLog[1].set_xlabel('')
 
     fig.tight_layout()
-    plt.savefig("plots-new/{}.pdf".format(outfile))
+    figLog.tight_layout()
+
+    plt.setp(axes[0].get_xticklabels(), visible=False)
+    plt.setp(axes[1].get_xticklabels(), visible=False)
+    plt.setp(axesLog[0].get_xticklabels(), visible=False)
+    plt.setp(axesLog[1].get_xticklabels(), visible=False)
+
+    if save and outfile:
+        plt.savefig(f"plots-new/{outfile}.pdf")
+    if show:
+        plt.show()
+
     plt.clf()
     plt.close()
 
