@@ -19,7 +19,7 @@ def main(argv):
     # dictionary of reciprocation functions
     rfs = {
         'linear'  : lambda x: x,
-        'sigmoid' : lambda x: 1 / (1 + exp(1-x)),
+        'sigmoid' : lambda x: 1 / (1 + exp(2-x)),
         'tanh'    : lambda x: tanh(x),
     }
 
@@ -113,17 +113,17 @@ def main(argv):
                 # outfile = '{f}-{rep}-{data}-{dpr}-{ur}'.format(f=function, rep=rep, data=data, dpr=dpr, ur='_'.join(str(r) for r in upload_rates))
             ledgers = initialLedgers(rep, upload_rates)
             runNew(data, dpr, rfs[function], upload_rates, ledgers, outfile, not args.no_plot, not args.no_save)
-
-    # for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
-    #     outfile = args.output
-    #     if not outfile:
-    #         outfile = '{f}-{rep}-{rounds}-{res}-{step}'.format(f=function, rep=rep, rounds=args.rounds, res='_'.join(str(r) for r in resources), step=args.dev_step)
-    #     ledgers = initialLedgers(rep, resources)
-    #     if args.range:
-    #         peer, amt = args.range
-    #         runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
-    #     else:
-    #         run(resources, rfs[function], args.rounds, ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
+    else:
+        for function, resources, rep in product(args.reciprocation_function, args.resources, args.initial_reputation):
+            outfile = args.output
+            if not outfile:
+                outfile = '{f}-{rep}-{rounds}-{res}-{step}'.format(f=function, rep=rep, rounds=args.rounds, res='_'.join(str(r) for r in resources), step=args.dev_step)
+            ledgers = initialLedgers(rep, resources)
+            if args.range:
+                peer, amt = args.range
+                runRange(rfs[function], deepcopy(resources), ledgers, peer, amt, args.range_step, args.dev_step, outfile, not args.no_plot)
+            else:
+                run(resources, rfs[function], args.rounds, ledgers, args.dev_step, outfile, not args.no_plot, not args.no_save)
 
 if __name__ == '__main__':
     main(sys.argv[1:])

@@ -63,8 +63,6 @@ def rangeEval(rf, resources, ledgers, peer, amt, range_step, dev_step):
 
 def runNew(data, dpr, rf, upload_rates, initial_ledgers, outfile, plot_results=False, save_results=False):
     _, history = propagateN(data, dpr, rf, upload_rates, initial_ledgers)
-    # if plot_results:
-    #     plotNew(outfile, non_dev, dev)
     if save_results:
         history.to_csv('results-new/{}.csv'.format(outfile))
     if plot_results:
@@ -72,30 +70,6 @@ def runNew(data, dpr, rf, upload_rates, initial_ledgers, outfile, plot_results=F
 
 # run non_deviating case
 def runNormal(data, dpr, rf, upload_rates, initial_ledgers):
-    # if rounds < 1:
-    #     print(f"Rounds should be greater than or equal to 1, is {rounds}")
-    #     return None
-    # peer that we want to calculate the payoff of
-    # peer = 0
-    # peer allocations in non-deviating case
-    # ledgers = deepcopy(initial_ledgers)
-    # play out the rest of the rounds, sum user 0's total payoff
-    # payoff = 0
-
-    # payoffs, _, ledgers, allocations = propagateN(rounds, rf, resources, ledgers)
-    # for _ in range(rounds):
-        # _, ledgers, allocations = propagate(rf, resources, ledgers) # TODO: FIX
-        # payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
-
-    # store results for non-deviating case
-    # TODO: should I be exporting allocations, or ledgers and/or debt ratios? I think they're
-    # 1-round separate in time, so be careful with this decision (might be a good reason that
-    # I originally chose to do it the way I did)
-    # non_dev = pd.DataFrame.from_dict({
-    #     'b01': [allocations[0][1]],
-    #     'b02': [allocations[0][2]],
-    #     'payoff': [payoff]
-    # })
     return propagateN(data, dpr, rf, upload_rates, ledgers)
 
 # run all deviating cases
@@ -165,44 +139,12 @@ def propagateN(data, data_per_round, rf, upload_rates, ledgers):
                     break
         t += 1
 
-        # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
-        # ls, allocations = propagate(rf, ls, data_rem, next_reset)
-        # data_rem = [min(0, d - next_reset) for d in data_rem]
-        # reset all peers who have 0 rem resource
-        # for peer, rem in enumerate(round_rem):
-            # if rem = 0:
-                # round_rem[peer] = data_per_round
-                # allocations[i] = calculateAllocations(rf, data_per_round # TODODODOTODOTODO
-        # calculate payoff each peer received for this round, add to total
-        # ps = totalAllocationToPeers(rf, rs, ls)
-        # for peer in payoffs.keys():
-            # payoffs[peer] += ps[peer]
-
-    # TODO: need to return rs? not sure anything will use it
-    # return payoffs, rs, ls, allocations
     return ledgers, history
-
-# def propagate(rf, ledgers, data_limits, next_reset):
-    # allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
-    # new_ledgers = updateLedgers(ledgers, allocations, data_limits, next_reset)
-    # return new_ledgers, allocations
-
-# TODO: this hasn't been updated to work with the new updateLedgers, but may need to be deleted anyway
-def propagateOld(rf, resources, ledgers):
-    allocations = {i: calculateAllocations(rf, resources[i], ledgers[i]) for i in ledgers.keys()}
-    # if incremental:
-    new_ledgers, new_resources = updateLedgers(ledgers, allocations, resources)
-    return new_resources, new_ledgers, allocations
-    # return allocations, new_ledgers, new_resources
-    # else:
-        # new_ledgers = updateLedgers(ledgers, allocations)
-        # return allocations, new_ledgers
 
 # Allocation calculation functions
 # --------------------------------
 
 def totalAllocationToPeers(rf, resources, ledgers):
-    #TODO: I wrote this while tired, check
     totals = {}
     for peer in ledgers.keys():
         totals[peer] = 0
@@ -216,8 +158,8 @@ def totalAllocationToPeers(rf, resources, ledgers):
 def totalAllocationToPeer(rf, resources, ledgers, peer):
     # input
     #   -   reciprocation function
-    #   -   current ledgers
     #   -   peer data resources
+    #   -   current ledgers
     #   -   `peer`: which peer to calculate the payoff for
     # output: `peer`'s payoff
 
