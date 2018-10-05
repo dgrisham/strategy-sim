@@ -73,30 +73,6 @@ def runNew(data, dpr, rf, upload_rates, initial_ledgers, mode, outfile, save_res
 
 # run non_deviating case
 def runNormal(data, dpr, rf, upload_rates, initial_ledgers):
-    # if rounds < 1:
-    #     print(f"Rounds should be greater than or equal to 1, is {rounds}")
-    #     return None
-    # peer that we want to calculate the payoff of
-    # peer = 0
-    # peer allocations in non-deviating case
-    # ledgers = deepcopy(initial_ledgers)
-    # play out the rest of the rounds, sum user 0's total payoff
-    # payoff = 0
-
-    # payoffs, _, ledgers, allocations = propagateN(rounds, rf, resources, ledgers)
-    # for _ in range(rounds):
-        # _, ledgers, allocations = propagate(rf, resources, ledgers) # TODO: FIX
-        # payoff += totalAllocationToPeer(rf, resources, ledgers, peer)
-
-    # store results for non-deviating case
-    # TODO: should I be exporting allocations, or ledgers and/or debt ratios? I think they're
-    # 1-round separate in time, so be careful with this decision (might be a good reason that
-    # I originally chose to do it the way I did)
-    # non_dev = pd.DataFrame.from_dict({
-    #     'b01': [allocations[0][1]],
-    #     'b02': [allocations[0][2]],
-    #     'payoff': [payoff]
-    # })
     return propagateN(data, dpr, rf, upload_rates, ledgers)
 
 # run all deviating cases
@@ -307,8 +283,8 @@ def totalAllocationToPeers(rf, resources, ledgers):
 def totalAllocationToPeer(rf, resources, ledgers, peer):
     # input
     #   -   reciprocation function
-    #   -   current ledgers
     #   -   peer data resources
+    #   -   current ledgers
     #   -   `peer`: which peer to calculate the payoff for
     # output: `peer`'s payoff
 
