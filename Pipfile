@@ -1,17 +1,17 @@
 [[source]]
-
 url = "https://pypi.python.org/simple"
 verify_ssl = true
 name = "pypi"
 
-
 [packages]
-
 pytest = "*"
 pandas = "*"
 matplotlib = "*"
 numpy = "*"
-
+ipython = "*"
 
 [dev-packages]
 
+[scripts]
+main = './src/strategy_sim/app.py'
+interactive = 'ipython3 -i src/strategy_sim/app.py --'
