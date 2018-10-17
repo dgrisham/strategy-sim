@@ -12,8 +12,7 @@ class Ledger:
         self.sent_to = sent_to
 
     def __eq__(self, other):
-        return self.recv_from == other.recv_from \
-            and self.sent_to == other.sent_to
+        return self.recv_from == other.recv_from and self.sent_to == other.sent_to
 
     def __str__(self):
         return "({:6.3f}, {:6.3f})".format(self.recv_from, self.sent_to)
@@ -22,7 +21,7 @@ class Ledger:
         return self.__str__()
 
     def debtRatio(self):
-        return self.recv_from / self.sent_to
+        return (self.recv_from + 1) / (self.sent_to + 1)
 
     def send(self, amt, inplace=False):
         ledger = self if inplace else deepcopy(self)
