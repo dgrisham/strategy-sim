@@ -40,6 +40,7 @@ def app():
     plot_kind = args.plot_kind
     save_plot = args.save_plot
     show_plot = not args.no_show_plot
+    outdir = args.outdir.rstrip("/")
 
     history = run(
         data,
@@ -53,7 +54,7 @@ def app():
         params = pd.DataFrame(
             index=history.index.get_level_values(1).unique()
         ).rename_axis("id")
-        params["round_burst"] = str(dpr)
+        params["round_burst"] = list(map(str, dpr))
         params["strategy"] = function
         params["upload_bandwidth"] = list(map(str, upload_rates))
 
@@ -71,8 +72,10 @@ def app():
         ledgers.index = ledgers.index.reorder_levels(["id", "peer", "time"])
 
         ti, tf = ledgers.index.get_level_values("time")[[0, -1]]
-        cfg = mkPlotConfig(ledgers, (ti, tf), params, plot_kind)
-        if fbasename:
+        cfg = mkPlotConfig(ledgers, (ti, tf), params, plot_kind, fdir=outdir)
+        if not save_plot:
+            cfg["fbasename"] = None
+        elif fbasename:
             cfg["fbasename"] = fbasename
         if fext is not None:
             cfg["fext"] = fext
@@ -150,6 +153,10 @@ def cli(rfs):
         "-o",
         "--output",
         default="",
+    )
+    cli.add_argument(
+        "--outdir",
+        default=".",
     )
     # fmt: on
     return cli.parse_args()

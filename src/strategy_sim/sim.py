@@ -15,12 +15,14 @@ __license__ = "mit"
 
 
 def run(data, data_per_round, rf, upload_rates, outfile=None):
-    """ Run the simulation"""
+    """
+    Run the simulation.
+    """
 
     n = len(upload_rates)
     ledgers = {i: {j: Ledger(0, 0) for j in range(n) if j != i} for i in range(n)}
     # initialize history
-    t_tot = max((n - 1) * data // upload_rates[i] for i in range(n)) + 1
+    t_tot = max((n - 1) * data // upload_rates[i] for i in range(n))
     history = pd.DataFrame(
         index=pd.MultiIndex.from_tuples(
             (
@@ -44,11 +46,15 @@ def run(data, data_per_round, rf, upload_rates, outfile=None):
         i: {j: 0 for j in ledgers_i.keys()} for i, ledgers_i in ledgers.items()
     }
     t = 0
-    active_users = [
+    active_users = {
         i for i, di in data_rem.items() if not all(np.isclose(list(di.values()), 0))
-    ]
+    }
     while len(active_users) > 0:
+        finished = set()
         for sender in active_users:
+            allocations[sender] = calculateAllocations(
+                rf, data_per_round[sender], ledgers[sender], data_rem[sender]
+            )
             upload = upload_rates[sender]
             # store amount sent to each peer
             sent = defaultdict(int)
@@ -68,12 +74,9 @@ def run(data, data_per_round, rf, upload_rates, outfile=None):
                         break
 
                 if all(np.isclose(list(data_rem[sender].values()), 0)):
-                    active_users.remove(sender)
+                    finished.add(sender)
                     done = True
                 elif np.isclose(upload, 0):
-                    allocations[sender] = calculateAllocations(
-                        rf, data_per_round[sender], ledgers[sender], data_rem[sender]
-                    )
                     done = True
                 else:
                     allocations[sender] = calculateAllocations(
@@ -86,6 +89,7 @@ def run(data, data_per_round, rf, upload_rates, outfile=None):
                     amt,
                     ledgers[sender][receiver].debtRatio(),
                 ]
+        active_users -= finished
         t += 1
     if t != t_tot:
         warn(f"t != t_tot (t={t}, t_tot={t_tot})")
@@ -97,6 +101,22 @@ def run(data, data_per_round, rf, upload_rates, outfile=None):
 
 
 def calculateAllocations(rf, resource, ledgers, data):
+    """
+    Calculate upload allocations for a user.
+
+    Inputs:
+        -   rf (function): A function that takes in a peer's debt ratio and
+            outputs a weight for that peer.
+        -   resource (int): How much upload bandwidth this peer has to allocate.
+        -   data (dict): Key is a peer's ID and corresponding value is that
+            peer's ledger w/r/t user.
+        -   data (dict): Key is a peer's ID and corresponding value is the
+            amount of data the user still has left to send that peer.
+    Output:
+        (dict): Key is a peer's ID and corresponding value is that peer's
+        calculated upload allocation. The sum of the values should be equal to
+        the input resource value.
+    """
     weights = {
         p: rf(l.debtRatio()) for p, l in ledgers.items() if not np.isclose(data[p], 0)
     }
