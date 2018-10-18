@@ -83,10 +83,6 @@ def app():
         plt.show()
         plt.close()
 
-        return history, ledgers
-
-    return history
-
 
 def cli(rfs):
     """
@@ -162,4 +158,4 @@ def cli(rfs):
     return cli.parse_args()
 
 
-h, l = app()
+app()
