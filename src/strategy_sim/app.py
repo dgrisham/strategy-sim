@@ -26,8 +26,8 @@ def app():
     upload_rates = args.upload_rates
     data = args.data
     dpr = args.dpr if args.dpr else [args.dpr_const] * len(upload_rates)
-    if args.output:
-        fbasename, fext = splitext(args.output)
+    if args.outfile:
+        fbasename, fext = splitext(args.outfile)
         if fext == "":
             fext = None
     else:
@@ -150,7 +150,7 @@ def cli(rfs):
     )
     cli.add_argument(
         "-o",
-        "--output",
+        "--outfile",
         default="",
     )
     cli.add_argument(
