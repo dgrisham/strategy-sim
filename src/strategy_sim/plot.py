@@ -224,7 +224,6 @@ def cfgAxes(axes, log=False, **kwargs):
     Configure axes settings that must be set after plotting (e.g. because
     the pandas plotting function overwrites them).
     """
-
     if log:
         axes[0].set_yscale("symlog")
         axes[0].set_ylim(bottom=0)
