@@ -173,6 +173,7 @@ def mkAxes(n, cycleLen, plotTitle, colors, log=False):
     """
 
     fig, axes = plt.subplots(n, sharex=True, sharey=True, tight_layout=False)
+    fig.subplots_adjust(hspace=0.5)
     if n == 1:
         axes = [axes]
 
@@ -214,8 +215,6 @@ def mkAxes(n, cycleLen, plotTitle, colors, log=False):
             ax.set_ylabel(ylabel)
             fig.suptitle(plotTitle, **titleArgs)
 
-    fig.subplots_adjust(hspace=0.5)
-
     return fig, axes
 
 
@@ -224,7 +223,7 @@ def cfgAxes(axes, log=False, **kwargs):
     Configure axes settings that must be set after plotting (e.g. because
     the pandas plotting function overwrites them).
     """
-    # axes share y axis settings, so just set on first
+    # axes share y axis scale/range settings, so just set on first
     if log:
         axes[0].set_yscale("symlog")
         axes[0].set_ylim(bottom=0)
