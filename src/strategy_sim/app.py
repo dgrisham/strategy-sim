@@ -80,8 +80,9 @@ def app():
         if fext is not None:
             cfg["fext"] = fext
         plot(ledgers, (ti, tf), cfg)
-        plt.show()
-        plt.close()
+        if show_plot:
+            plt.show()
+            plt.close()
 
 
 def cli(rfs):
