@@ -28,6 +28,8 @@ def app():
     dpr = args.dpr if args.dpr else [args.dpr_const] * len(upload_rates)
     if args.output:
         fbasename, fext = splitext(args.output)
+        if fext == "":
+            fext = None
     else:
         fbasename = (
             f"{function}"
